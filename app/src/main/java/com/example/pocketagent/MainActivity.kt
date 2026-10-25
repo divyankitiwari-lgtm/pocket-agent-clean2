@@ -201,6 +201,16 @@ class MainActivity : Activity() {
             startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         screenCard.addView(accessButton, margins(bottom = 8))
+        val backgroundButton = actionButton("Allow background running", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125))
+        backgroundButton.setOnClickListener {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
+                startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+            }
+            status.text = "In Battery settings, allow Pocket Agent to run without battery restrictions if your phone offers that option."
+        }
+        screenCard.addView(backgroundButton, margins(bottom = 8))
         val refreshButton = actionButton("Refresh observed screen text", Color.rgb(239, 240, 247), ink)
         refreshButton.setOnClickListener { refreshScreenText() }
         screenCard.addView(refreshButton, margins(bottom = 10))
