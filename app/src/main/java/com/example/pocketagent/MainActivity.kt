@@ -72,6 +72,15 @@ class MainActivity : Activity() {
         val menuButton = actionButton("☰  Menu & History", white, accent)
         menuButton.setOnClickListener { showHistoryMenu() }
         topBar.addView(menuButton, LinearLayout.LayoutParams(-2, dp(46)))
+        val liveButton = actionButton("◉ Live Communication", Color.rgb(30, 32, 48), Color.WHITE)
+        liveButton.setOnClickListener {
+            val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank { "No Gemini events yet. Ask Gemini to populate this log." }
+            AlertDialog.Builder(this).setTitle("Pocket Agent · Live Communication").setMessage(log)
+                .setPositiveButton("Close", null)
+                .setNeutralButton("Clear log") { _, _ -> prefs.edit().putString("live_communication_log", "").apply() }
+                .show()
+        }
+        topBar.addView(liveButton, LinearLayout.LayoutParams(-2, dp(46)).apply { marginStart = dp(6) })
         val topStatus = TextView(this).apply {
             text = if (prefs.getBoolean("accessibility_connected", false)) "● Service connected" else "○ Service not connected"
             textSize = 11f
@@ -411,6 +420,12 @@ class MainActivity : Activity() {
         prefs.edit().putString("history", updated.toString()).putString("last_task", userTask).apply()
     }
 
+    private fun logCommunication(kind: String, message: String) {
+        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+        val entry = "[" + time + "] " + kind + "\n" + message
+        val old = prefs.getString("live_communication_log", "").orEmpty()
+        prefs.edit().putString("live_communication_log", (old + "\n\n" + entry).takeLast(12000)).apply()
+    }
     private fun sendGeminiRequest() {
         val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
@@ -441,6 +456,7 @@ class MainActivity : Activity() {
         askButton.isEnabled = false
         askButton.text = "Connecting…"
         status.text = "Sending request to Gemini…"
+        logCommunication("REQUEST", "Model: " + chosenModel + "\nTask: " + userTask.take(500))
         answerView.text = "Waiting for Gemini's response. Keep this screen open."
         Thread {
             var connection: HttpURLConnection? = null
@@ -478,6 +494,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     answerView.text = answer
                     status.text = "Response received · saved to History"
+                    logCommunication("RESPONSE", answer.take(1200))
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -486,6 +503,7 @@ class MainActivity : Activity() {
                     saveHistory(userTask, chosenModel, message)
                     answerView.text = message
                     status.text = "Request failed · saved to History"
+                    logCommunication("ERROR", message.take(900))
                 }
             } finally {
                 connection?.disconnect()
