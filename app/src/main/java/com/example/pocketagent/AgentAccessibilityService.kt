@@ -2,6 +2,15 @@ package com.example.pocketagent
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
+import android.content.Context
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Button
 import android.view.accessibility.AccessibilityNodeInfo
 
 /**
@@ -9,6 +18,99 @@ import android.view.accessibility.AccessibilityNodeInfo
  * It does not click, type, submit forms, or transmit screen content.
  */
 class AgentAccessibilityService : AccessibilityService() {
+    private var agentTab: LinearLayout? = null
+    private var agentStatus: TextView? = null
+    private var windowManager: WindowManager? = null
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun pill(color: Int, radius: Int): GradientDrawable = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radius).toFloat()
+    }
+
+    private fun syncAgentTab() {
+        val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
+        val active = prefs.getBoolean("session_active", false)
+        if (!active) {
+            removeAgentTab()
+            return
+        }
+        if (agentTab != null) {
+            agentStatus?.text = "● Pocket Agent · Running"
+            return
+        }
+        try {
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(7), dp(7), dp(7))
+                background = pill(Color.rgb(27, 30, 47), 24)
+                elevation = dp(8).toFloat()
+            }
+            val label = TextView(this).apply {
+                text = "● Pocket Agent · Running"
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                setPadding(0, 0, dp(8), 0)
+            }
+            panel.addView(label, LinearLayout.LayoutParams(-2, dp(38)))
+            val pause = Button(this).apply {
+                text = "Pause"
+                textSize = 11f
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = pill(Color.rgb(117, 92, 255), 18)
+                setPadding(dp(8), 0, dp(8), 0)
+                setOnClickListener {
+                    prefs.edit().putBoolean("session_active", false).apply()
+                    removeAgentTab()
+                }
+            }
+            panel.addView(pause, LinearLayout.LayoutParams(-2, dp(38)).apply { marginEnd = dp(5) })
+            val stop = Button(this).apply {
+                text = "Stop"
+                textSize = 11f
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = pill(Color.rgb(190, 55, 72), 18)
+                setPadding(dp(8), 0, dp(8), 0)
+                setOnClickListener {
+                    prefs.edit().putBoolean("session_active", false)
+                        .putString("latest_screen_text", "")
+                        .putString("pending_action", "").apply()
+                    removeAgentTab()
+                }
+            }
+            panel.addView(stop, LinearLayout.LayoutParams(-2, dp(38)))
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.END
+                x = dp(10)
+                y = dp(90)
+            }
+            windowManager?.addView(panel, params)
+            agentTab = panel
+            agentStatus = label
+        } catch (_: Exception) {
+            // The core service remains usable if this Android version blocks the overlay.
+        }
+    }
+
+    private fun removeAgentTab() {
+        try {
+            agentTab?.let { windowManager?.removeView(it) }
+        } catch (_: Exception) { }
+        agentTab = null
+        agentStatus = null
+    }
     override fun onServiceConnected() {
         super.onServiceConnected()
         getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
@@ -20,6 +122,7 @@ class AgentAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
         if (event == null) return
+        syncAgentTab()
         prefs.edit().putLong("last_accessibility_event", System.currentTimeMillis()).apply()
         if (!prefs.getBoolean("session_active", false)) return
 
@@ -100,6 +203,11 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() = Unit
+
+    override fun onDestroy() {
+        removeAgentTab()
+        super.onDestroy()
+    }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
