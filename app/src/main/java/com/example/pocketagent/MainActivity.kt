@@ -136,16 +136,17 @@ class MainActivity : Activity() {
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
-                "Gemini 3.8 Flash — gemini-3.8-flash",
-                "Gemini 3.7 Flash — gemini-3.7-flash",
+                "Gemini 3.8 Flash · recommended — gemini-3.8-flash",
                 "Gemini 3.6 Flash — gemini-3.6-flash",
-                "Gemini 3.5 Flash — gemini-3.5-flash",
-                "Gemini 3 Flash Preview — gemini-3-flash-preview",
                 "Gemini 3.5 Flash-Lite — gemini-3.5-flash-lite",
                 "Gemini 3.1 Flash-Lite — gemini-3.1-flash-lite",
+                "Gemini 3 Flash Preview — gemini-3-flash-preview",
+                "Gemini 3.1 Pro Preview — gemini-3.1-pro-preview",
                 "Gemini 2.5 Flash — gemini-2.5-flash",
                 "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
-                "Gemini 2.5 Pro — gemini-2.5-pro"
+                "Gemini 2.5 Pro — gemini-2.5-pro",
+                "Gemma 4 31B IT — gemma-4-31b-it",
+                "Gemma 4 26B MoE IT — gemma-4-26b-a4b-it"
             )
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modelNames).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -285,6 +286,80 @@ class MainActivity : Activity() {
         })
 
         setContentView(root)
+        if (!prefs.getBoolean("demo_account_created", false)) {
+            content.post { showWelcomeGate() }
+        }
+    }
+
+    private fun showWelcomeGate() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+        }
+        val name = field("Your display name", false)
+        val email = field("Email (demo only)", false).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        }
+        val password = field("Password (not saved)", true)
+        panel.addView(name, margins(bottom = 8))
+        panel.addView(email, margins(bottom = 8))
+        panel.addView(password, margins(bottom = 8))
+        panel.addView(TextView(this).apply {
+            text = "DEMO SIGN-UP · Local test profile only. No real online account is created. Passwords are not stored."
+            textSize = 12f
+            setTextColor(muted)
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Welcome to Pocket Agent")
+            .setMessage("Create a demo profile to explore the agent dashboard.")
+            .setView(panel)
+            .setCancelable(false)
+            .setPositiveButton("Create demo account", null)
+            .setNeutralButton("Demo payment options", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val displayName = name.text.toString().trim()
+                val emailValue = email.text.toString().trim()
+                if (displayName.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || password.text.isNullOrBlank()) {
+                    status.text = "Enter a display name, valid email, and test password"
+                    return@setOnClickListener
+                }
+                prefs.edit().putBoolean("demo_account_created", true)
+                    .putString("demo_display_name", displayName)
+                    .putString("demo_email", emailValue).apply()
+                dialog.dismiss()
+                status.text = "Demo profile created locally · no real account was made"
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                dialog.dismiss()
+                showDemoPayments()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showDemoPayments() {
+        val options = arrayOf(
+            "Free · ₹0 · No payment",
+            "Plus demo · ₹99 · SIMULATION ONLY",
+            "Pro demo · ₹199 · SIMULATION ONLY",
+            "Google Play balance · preview only"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Demo plans & payments")
+            .setMessage("TEST MODE ONLY — no payment provider is connected. These choices never charge money and do not unlock paid services.")
+            .setItems(options) { _, which ->
+                val choice = options[which]
+                prefs.edit().putString("demo_plan_selection", choice).apply()
+                AlertDialog.Builder(this)
+                    .setTitle("Demo selection recorded")
+                    .setMessage("$choice\n\nSimulation only. No payment was attempted, no Google Play transaction occurred, and no real subscription was created.")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
