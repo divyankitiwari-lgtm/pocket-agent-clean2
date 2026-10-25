@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
@@ -248,7 +249,7 @@ class MainActivity : Activity() {
         content.addView(controlsCard, margins(bottom = 12))
 
         content.addView(TextView(this).apply {
-            text = "Privacy note: the key stays in memory only. If you enable screen text in your request, those labels are sent to Google Gemini. Avoid passwords and private information. Automatic tapping and typing are not implemented in this version."
+            text = "Privacy note: your key is saved on this phone using encrypted preferences when available. If you include screen text, those labels are sent to Google Gemini. Avoid passwords and private information. Automatic tapping and typing are not implemented in this build."
             textSize = 12f
             setTextColor(muted)
             setPadding(dp(4), dp(4), dp(4), dp(12))
@@ -304,12 +305,21 @@ class MainActivity : Activity() {
     }
 
     private fun actionButton(title: String, bg: Int, fg: Int) = Button(this).apply {
+        val normalBackground = rounded(bg, 16)
         text = title
         textSize = 13f
         isAllCaps = false
         setTypeface(null, Typeface.BOLD)
         setTextColor(fg)
-        background = rounded(bg, 16)
+        background = normalBackground
+        // Clear visual press feedback: briefly turn grey while the finger is down.
+        setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> view.background = rounded(Color.rgb(185, 188, 198), 16)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.background = normalBackground
+            }
+            false // preserve normal click handling
+        }
         minHeight = dp(48)
         stateListAnimator = null
         elevation = 0f
@@ -349,7 +359,7 @@ class MainActivity : Activity() {
                             status.text = "History cleared"
                         }.show()
                     2 -> AlertDialog.Builder(this).setTitle("Connection & privacy")
-                        .setMessage("Your API key is not saved. Task history is stored locally on this phone. Screen labels are sent to Gemini only when included in a request. This build does not automatically tap or type.")
+                        .setMessage("Your API key is not saved. Task history is stored locally on this phone. Screen labels are sent to Gemini only when included in a request. Automatic tapping and typing are not available in this build.")
                         .setPositiveButton("OK", null).show()
                 }
             }.show()
@@ -392,7 +402,7 @@ class MainActivity : Activity() {
         val userTask = task.text.toString().trim()
         if (key.isEmpty()) {
             status.text = "Missing API key"
-            answerView.text = "Paste your Gemini API key in the Connection section first. The key is not saved by this app."
+            answerView.text = "Paste your Gemini API key in the Connection section first. You can save it on this phone using the secure-save button."
             return
         }
         if (userTask.isEmpty()) {
