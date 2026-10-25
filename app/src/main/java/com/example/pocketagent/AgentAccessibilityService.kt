@@ -111,15 +111,6 @@ class AgentAccessibilityService : AccessibilityService() {
         agentTab = null
         agentStatus = null
     }
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
-            .putBoolean("accessibility_connected", true)
-            .putString("accessibility_status", "connected")
-            .apply()
-    }
-
-
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val poller = object : Runnable {
         override fun run() {
