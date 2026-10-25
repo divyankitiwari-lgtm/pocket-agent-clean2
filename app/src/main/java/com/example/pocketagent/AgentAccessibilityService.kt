@@ -119,16 +119,37 @@ class AgentAccessibilityService : AccessibilityService() {
             .apply()
     }
 
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val poller = object : Runnable {
+        override fun run() {
+            syncAgentTab()
+            processActiveWindow()
+            handler.postDelayed(this, 650)
+        }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
+            .putBoolean("accessibility_connected", true)
+            .putString("accessibility_status", "connected")
+            .apply()
+        handler.removeCallbacks(poller)
+        handler.post(poller)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
         if (event == null) return
         syncAgentTab()
+        processActiveWindow()
+    }
+
+    private fun processActiveWindow() {
+        val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
         prefs.edit().putLong("last_accessibility_event", System.currentTimeMillis()).apply()
         if (!prefs.getBoolean("session_active", false)) return
-
         val root = rootInActiveWindow ?: return
-        // Execute only a single, explicit action queued by the agent controller.
-        // Actions are consumed once to avoid repeating a tap on every accessibility event.
         val pending = prefs.getString("pending_action", "").orEmpty()
         if (pending.isNotBlank()) {
             prefs.edit().putString("pending_action", "").apply()
@@ -158,6 +179,7 @@ class AgentAccessibilityService : AccessibilityService() {
                         val ok = performGlobalAction(GLOBAL_ACTION_BACK)
                         prefs.edit().putString("last_action_result", if (ok) "Pressed Back" else "Back action failed").apply()
                     }
+                    else -> prefs.edit().putString("last_action_result", "Unsupported action").apply()
                 }
             } catch (e: Exception) {
                 prefs.edit().putString("last_action_result", "Action error: " + (e.message ?: "unknown")).apply()
@@ -165,7 +187,7 @@ class AgentAccessibilityService : AccessibilityService() {
         }
         val labels = ArrayList<String>()
         collectVisibleLabels(root, labels, 0)
-        prefs.edit().putString("latest_screen_text", labels.distinct().take(100).joinToString("\n")).apply()
+        prefs.edit().putString("latest_screen_text", labels.distinct().take(100).joinToString("\\n")).apply()
     }
 
     private fun collectVisibleLabels(node: AccessibilityNodeInfo?, out: MutableList<String>, depth: Int) {
