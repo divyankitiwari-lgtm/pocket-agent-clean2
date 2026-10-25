@@ -438,7 +438,7 @@ class MainActivity : Activity() {
             status.text = "Stopping agent…"; agentButton.text = "▶ Start autonomous agent"; return
         }
         agentRunning = true
-        prefs.edit().putBoolean("session_active", true).putString("last_task", userTask).putString("pending_action", "").putString("last_action_result", "").apply()
+        prefs.edit().putBoolean("session_active", true).putString("current_agent_status", "● Pocket Agent · Starting").putString("last_task", userTask).putString("pending_action", "").putString("last_action_result", "").apply()
         agentButton.text = "■ Stop autonomous agent"
         status.text = "Agent starting · switch to the target app"
         logCommunication("AGENT START", userTask)
@@ -468,6 +468,7 @@ Rules: act only on visible labels. Never invent buttons. Do not enter passwords,
                     val action = command.optString("action", "ask_user")
                     val textValue = command.optString("text", "")
                     val reason = command.optString("reason", "")
+                    prefs.edit().putString("current_agent_status", "● Step " + step + " · " + action).apply()
                     logCommunication("AGENT STEP " + step, "Screen: " + screen.take(700) + "\\nDecision: " + action + " " + textValue + "\\nReason: " + reason)
                     runOnUiThread { answerView.text = "Step " + step + "/25\\nAction: " + action + "\\n" + textValue + "\\n\\nReason: " + reason; status.text = "Agent step " + step + " · " + action }
                     when (action) {
@@ -493,7 +494,7 @@ Rules: act only on visible labels. Never invent buttons. Do not enter passwords,
                 runOnUiThread { answerView.text = message; status.text = "Agent error" }
             } finally {
                 agentRunning = false
-                prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
+                prefs.edit().putBoolean("session_active", false).putString("current_agent_status", "● Pocket Agent · Stopped").putString("pending_action", "").apply()
                 runOnUiThread { agentButton.text = "▶ Start autonomous agent" }
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
