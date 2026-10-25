@@ -404,7 +404,7 @@ class MainActivity : Activity() {
                     .openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 15000
-                    readTimeout = 30000
+                    readTimeout = 60000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 }
@@ -427,16 +427,18 @@ class MainActivity : Activity() {
                     ?.optJSONObject(0)?.optJSONObject("content")
                     ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
                 if (answer.isBlank()) throw IllegalStateException("Gemini returned no text. Check the model name and API key.")
+                saveHistory(userTask, chosenModel, answer)
                 runOnUiThread {
                     answerView.text = answer
-                    status.text = "Response received"
+                    status.text = "Response received · saved to History"
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     val message = "Request failed: " + (e.message ?: "unknown error") +
                         "\n\nCheck internet, API key, model name, and Gemini quota."
+                    saveHistory(userTask, chosenModel, message)
                     answerView.text = message
-                    status.text = "Gemini request failed"
+                    status.text = "Request failed · saved to History"
                 }
             } finally {
                 connection?.disconnect()
