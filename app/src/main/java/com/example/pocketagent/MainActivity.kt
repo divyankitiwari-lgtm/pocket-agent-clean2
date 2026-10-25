@@ -1,6 +1,7 @@
 package com.example.pocketagent
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -54,6 +55,19 @@ class MainActivity : Activity() {
         }
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val topBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val menuButton = actionButton("☰  Menu & History", white, accent)
+        menuButton.setOnClickListener { showHistoryMenu() }
+        topBar.addView(menuButton, LinearLayout.LayoutParams(-2, dp(46)))
+        val topStatus = TextView(this).apply {
+            text = if (prefs.getBoolean("accessibility_connected", false)) "● Service connected" else "○ Service not connected"
+            textSize = 11f
+            setTextColor(if (prefs.getBoolean("accessibility_connected", false)) Color.rgb(35, 140, 90) else muted)
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        topBar.addView(topStatus, LinearLayout.LayoutParams(0, dp(46), 1f))
+        content.addView(topBar, margins(bottom = 10))
 
         val hero = card(white).apply { setPadding(dp(20), dp(20), dp(20), dp(20)) }
         hero.addView(TextView(this).apply {
@@ -115,6 +129,7 @@ class MainActivity : Activity() {
         taskCard.addView(sectionTitle("02  ·  YOUR TASK"))
         taskCard.addView(label("What should Gemini help with?"))
         task = field("Describe your task in plain English", false).apply {
+            setText(prefs.getString("last_task", "").orEmpty())
             minLines = 3
             maxLines = 5
             gravity = Gravity.TOP or Gravity.START
@@ -280,11 +295,74 @@ class MainActivity : Activity() {
         setPadding(dp(12), dp(10), dp(12), dp(10))
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::screenPreview.isInitialized) refreshScreenText()
+        if (::status.isInitialized) status.text =
+            if (prefs.getBoolean("accessibility_connected", false)) "Accessibility service connected"
+            else "Accessibility service not connected"
+    }
+
     private fun refreshScreenText() {
         val text = prefs.getString("latest_screen_text", "").orEmpty()
-        screenPreview.text = if (text.isBlank()) {
-            "No screen text captured. Enable Pocket Agent in Accessibility settings, open the target app, then tap Refresh."
-        } else text
+        val connected = prefs.getBoolean("accessibility_connected", false)
+        screenPreview.text = when {
+            text.isNotBlank() -> text
+            !connected -> "Pocket Agent has not confirmed an active Accessibility connection. Reopen this app or toggle the service off/on."
+            !prefs.getBoolean("session_active", false) -> "Accessibility is connected, but observation is paused. Tap Start, switch to the target app, wait, then return and refresh."
+            else -> "Service connected, but no readable labels were captured. Some apps hide their content from accessibility services."
+        }
+    }
+
+    private fun showHistoryMenu() {
+        val options = arrayOf("History", "Clear history", "Connection & privacy")
+        AlertDialog.Builder(this).setTitle("Pocket Agent")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showHistory()
+                    1 -> AlertDialog.Builder(this).setTitle("Clear history?")
+                        .setMessage("Delete saved prompts and responses from this phone?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Clear") { _, _ ->
+                            prefs.edit().putString("history", "[]").apply()
+                            status.text = "History cleared"
+                        }.show()
+                    2 -> AlertDialog.Builder(this).setTitle("Connection & privacy")
+                        .setMessage("Your API key is not saved. Task history is stored locally on this phone. Screen labels are sent to Gemini only when included in a request. This build does not automatically tap or type.")
+                        .setPositiveButton("OK", null).show()
+                }
+            }.show()
+    }
+
+    private fun showHistory() {
+        val entries = try { JSONArray(prefs.getString("history", "[]")) } catch (_: Exception) { JSONArray() }
+        if (entries.length() == 0) {
+            AlertDialog.Builder(this).setTitle("History").setMessage("No saved requests yet.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        val labels = Array(entries.length()) { i ->
+            val item = entries.optJSONObject(i) ?: JSONObject()
+            item.optString("task", "Task").take(60) + "\n" + item.optString("time", "") +
+                " · " + item.optString("answer", "").take(75)
+        }
+        AlertDialog.Builder(this).setTitle("Saved history").setItems(labels) { _, index ->
+            val item = entries.optJSONObject(index) ?: return@setItems
+            AlertDialog.Builder(this).setTitle(item.optString("task", "Saved task"))
+                .setMessage("Model: " + item.optString("model", "") + "\n" + item.optString("time", "") +
+                    "\n\n" + item.optString("answer", ""))
+                .setNeutralButton("Use prompt") { _, _ -> task.setText(item.optString("task", "")) }
+                .setPositiveButton("Close", null).show()
+        }.setPositiveButton("Close", null).show()
+    }
+
+    private fun saveHistory(userTask: String, chosenModel: String, answer: String) {
+        val old = try { JSONArray(prefs.getString("history", "[]")) } catch (_: Exception) { JSONArray() }
+        val updated = JSONArray().put(JSONObject()
+            .put("task", userTask).put("model", chosenModel).put("answer", answer)
+            .put("time", java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())))
+        for (i in 0 until minOf(old.length(), 49)) updated.put(old.getJSONObject(i))
+        prefs.edit().putString("history", updated.toString()).putString("last_task", userTask).apply()
     }
 
     private fun sendGeminiRequest() {
@@ -303,6 +381,7 @@ class MainActivity : Activity() {
         }
 
         val screen = prefs.getString("latest_screen_text", "").orEmpty()
+        prefs.edit().putString("last_task", userTask).apply()
         val prompt = buildString {
             append("You are Pocket Agent, an Android screen assistant. Give clear, concise, actionable guidance based on the user's task. Be explicit that you cannot perform actions on the phone. Never claim you performed actions. Never request passwords, payment details, or secret codes.\n\n")
             append("User task:\n")
