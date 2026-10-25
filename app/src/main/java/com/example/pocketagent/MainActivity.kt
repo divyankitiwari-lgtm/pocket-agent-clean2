@@ -106,7 +106,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "A calmer, faster AI workspace for your phone. Save your key securely, review task history, and control screen observation. Automated tapping and typing are still being built and are not available in this build."
+            text = "A phone-first AI agent prototype. Gemini chooses one action at a time; Android Accessibility attempts visible taps and text entry. Review each step and use Pause or Stop whenever needed."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -136,13 +136,8 @@ class MainActivity : Activity() {
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
-                "Gemini 3.8 Flash — gemini-3.8-flash",
-                "Gemini 3.6 Flash — gemini-3.6-flash",
-                "Gemini 3.5 Flash-Lite — gemini-3.5-flash-lite",
-                "Gemini 3.1 Flash-Lite — gemini-3.1-flash-lite",
-                "Gemini 3 Flash Preview — gemini-3-flash-preview",
-                "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
                 "Gemini 2.5 Flash — gemini-2.5-flash",
+                "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
                 "Gemini 2.5 Pro — gemini-2.5-pro"
             )
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modelNames).also {
@@ -183,6 +178,9 @@ class MainActivity : Activity() {
         askButton = actionButton("Ask Gemini", accent, white)
         askButton.setOnClickListener { sendGeminiRequest() }
         taskCard.addView(askButton, margins(bottom = 8))
+        val agentButton = actionButton("▶ Start autonomous agent", Color.rgb(30, 32, 48), Color.WHITE)
+        agentButton.setOnClickListener { startAutonomousAgent(agentButton) }
+        taskCard.addView(agentButton, margins(bottom = 8))
         content.addView(taskCard, margins(bottom = 14))
 
         val answerCard = card(white)
@@ -273,7 +271,7 @@ class MainActivity : Activity() {
         content.addView(controlsCard, margins(bottom = 12))
 
         content.addView(TextView(this).apply {
-            text = "Privacy note: your key is saved on this phone using encrypted preferences when available. If you include screen text, those labels are sent to Google Gemini. Avoid passwords and private information. Automatic tapping and typing are not implemented in this build."
+            text = "Privacy note: your key is saved on this phone using encrypted preferences when available. Visible screen labels and your task are sent to Google Gemini while the agent runs. Never automate passwords, payments, messages, deletion, or private information. Accessibility actions can fail; verify each step."
             textSize = 12f
             setTextColor(muted)
             setPadding(dp(4), dp(4), dp(4), dp(12))
@@ -426,6 +424,105 @@ class MainActivity : Activity() {
         val old = prefs.getString("live_communication_log", "").orEmpty()
         prefs.edit().putString("live_communication_log", (old + "\n\n" + entry).takeLast(12000)).apply()
     }
+
+    @Volatile private var agentRunning = false
+
+    private fun startAutonomousAgent(agentButton: Button) {
+        val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
+        val userTask = task.text.toString().trim()
+        val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
+        if (key.isBlank() || userTask.isBlank()) { status.text = if (key.isBlank()) "Add your Gemini API key first" else "Describe the task first"; return }
+        if (agentRunning) {
+            agentRunning = false
+            prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
+            status.text = "Stopping agent…"; agentButton.text = "▶ Start autonomous agent"; return
+        }
+        agentRunning = true
+        prefs.edit().putBoolean("session_active", true).putString("last_task", userTask).putString("pending_action", "").putString("last_action_result", "").apply()
+        agentButton.text = "■ Stop autonomous agent"
+        status.text = "Agent starting · switch to the target app"
+        logCommunication("AGENT START", userTask)
+        Thread {
+            try {
+                var lastResult = ""
+                for (step in 1..25) {
+                    if (!agentRunning || !prefs.getBoolean("session_active", false)) break
+                    var screen = prefs.getString("latest_screen_text", "").orEmpty()
+                    if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
+                    val instruction = """
+You control an Android screen through an accessibility service. Return ONLY one JSON object, no markdown:
+{"action":"tap_text","text":"exact visible label","reason":"brief reason"}
+Allowed actions: tap_text, type_text, back, done, ask_user.
+For type_text use {"action":"type_text","text":"text to enter","reason":"..."} only when an editable field is visibly focused.
+For back use {"action":"back","text":"","reason":"..."}; done uses {"action":"done","text":"completion summary","reason":"..."}; ask_user uses {"action":"ask_user","text":"what user must decide","reason":"..."}.
+User task: ${userTask}
+Step: ${step} of 25
+Visible screen text:
+${screen.take(9000)}
+Previous action result: ${lastResult.take(500)}
+Rules: act only on visible labels. Never invent buttons. Do not enter passwords, API keys, payment details, verification codes, or personal secrets. Do not make purchases, send messages, delete content, or accept paid subscriptions. If unclear or unsafe, use ask_user. If complete, use done. Choose one small action at a time.
+""".trimIndent()
+                    val raw = requestGeminiText(key, chosenModel, instruction)
+                    val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value ?: throw IllegalStateException("Gemini did not return a valid action JSON.")
+                    val command = JSONObject(match)
+                    val action = command.optString("action", "ask_user")
+                    val textValue = command.optString("text", "")
+                    val reason = command.optString("reason", "")
+                    logCommunication("AGENT STEP " + step, "Screen: " + screen.take(700) + "\\nDecision: " + action + " " + textValue + "\\nReason: " + reason)
+                    runOnUiThread { answerView.text = "Step " + step + "/25\\nAction: " + action + "\\n" + textValue + "\\n\\nReason: " + reason; status.text = "Agent step " + step + " · " + action }
+                    when (action) {
+                        "done" -> { runOnUiThread { answerView.text = "Task finished\\n\\n" + textValue; status.text = "Agent completed" }; break }
+                        "ask_user" -> { runOnUiThread { answerView.text = "Agent needs your input\\n\\n" + textValue; status.text = "Waiting for user" }; break }
+                        "tap_text", "type_text", "back" -> {
+                            prefs.edit().putString("last_action_result", "").putString("pending_action", JSONObject().put("action", action).put("text", textValue).toString()).apply()
+                            var waited = 0
+                            while (agentRunning && waited < 5000) {
+                                val result = prefs.getString("last_action_result", "").orEmpty()
+                                if (result.isNotBlank()) { lastResult = result; break }
+                                Thread.sleep(250); waited += 250
+                            }
+                            if (lastResult.isBlank()) lastResult = "No action confirmation received; checking screen again."
+                            Thread.sleep(650)
+                        }
+                        else -> { runOnUiThread { answerView.text = "Unsupported action: " + action; status.text = "Agent paused for safety" }; break }
+                    }
+                }
+            } catch (e: Exception) {
+                val message = "Agent error: " + (e.message ?: "unknown error")
+                logCommunication("AGENT ERROR", message)
+                runOnUiThread { answerView.text = message; status.text = "Agent error" }
+            } finally {
+                agentRunning = false
+                prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
+                runOnUiThread { agentButton.text = "▶ Start autonomous agent" }
+                logCommunication("AGENT STOP", "Agent loop ended.")
+            }
+        }.start()
+    }
+
+    private fun requestGeminiText(key: String, chosenModel: String, prompt: String): String {
+        var connection: HttpURLConnection? = null
+        try {
+            val safeModel = java.net.URLEncoder.encode(chosenModel, "UTF-8")
+            connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/" + safeModel + ":generateContent?key=" + key).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"; connectTimeout = 20000; readTimeout = 60000; doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+            val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 500))
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream.bufferedReader().use { it.readText() }
+            if (code !in 200..299) {
+                val message = try { JSONObject(response).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
+                throw IllegalStateException("Gemini HTTP " + code + ": " + (message ?: response.take(400)))
+            }
+            return JSONObject(response).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
+                .ifBlank { throw IllegalStateException("Gemini returned an empty response.") }
+        } finally { connection?.disconnect() }
+    }
+
     private fun sendGeminiRequest() {
         val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
