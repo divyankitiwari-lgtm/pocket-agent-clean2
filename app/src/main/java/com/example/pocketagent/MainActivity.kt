@@ -4,9 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -24,149 +26,237 @@ class MainActivity : Activity() {
     private lateinit var apiKey: EditText
     private lateinit var task: EditText
     private lateinit var screenPreview: TextView
+    private lateinit var answerView: TextView
     private lateinit var useScreen: CheckBox
+    private lateinit var askButton: Button
+    private lateinit var prefs: android.content.SharedPreferences
+
+    private val ink = Color.rgb(27, 30, 47)
+    private val muted = Color.rgb(115, 119, 139)
+    private val accent = Color.rgb(117, 92, 255)
+    private val page = Color.rgb(246, 245, 252)
+    private val white = Color.WHITE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
+        prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 22, 22, 22)
-            setBackgroundColor(Color.rgb(247, 248, 250))
+            setBackgroundColor(page)
         }
         val scroll = ScrollView(this)
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(24))
+        }
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        content.addView(TextView(this).apply {
-            text = "Pocket Agent"
-            textSize = 28f
+        val hero = card(white).apply { setPadding(dp(20), dp(20), dp(20), dp(20)) }
+        hero.addView(TextView(this).apply {
+            text = "✦  POCKET AGENT"
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(20, 25, 35))
+            letterSpacing = 0.12f
+            setTextColor(accent)
         })
-        content.addView(TextView(this).apply {
-            text = "Gemini-powered screen assistant"
+        hero.addView(TextView(this).apply {
+            text = "Your AI screen assistant"
+            textSize = 25f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(ink)
+            setPadding(0, dp(10), 0, dp(5))
+        })
+        hero.addView(TextView(this).apply {
+            text = "Tell Gemini what you need help with. This build can give guidance and read visible screen labels, but it cannot tap other apps yet."
             textSize = 14f
-            setPadding(0, 4, 0, 14)
+            setTextColor(muted)
+            setLineSpacing(dp(3).toFloat(), 1f)
         })
+        content.addView(hero, margins(bottom = 14))
 
-        content.addView(label("Gemini model"))
-        model = field("Model name", false).apply { setText("gemini-2.5-flash") }
-        content.addView(model)
+        val setup = card(white)
+        setup.addView(sectionTitle("01  ·  CONNECTION"))
+        setup.addView(label("Gemini API key"))
+        apiKey = field("Paste your key (kept in memory only)", true)
+        setup.addView(apiKey, margins(bottom = 10))
+        setup.addView(label("Model"))
+        model = field("gemini-2.5-flash", false).apply { setText("gemini-2.5-flash") }
+        setup.addView(model)
+        content.addView(setup, margins(bottom = 14))
 
-        content.addView(label("Gemini API key"))
-        apiKey = field("Paste key here — kept in memory only", true)
-        apiKey.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        content.addView(apiKey)
-
-        content.addView(label("Describe your task"))
-        task = field("What do you want help with?", false).apply {
-            minLines = 2
+        val taskCard = card(white)
+        taskCard.addView(sectionTitle("02  ·  YOUR TASK"))
+        taskCard.addView(label("What should Gemini help with?"))
+        task = field("Describe your task in plain English", false).apply {
+            minLines = 3
+            maxLines = 5
+            gravity = Gravity.TOP or Gravity.START
             setSingleLine(false)
         }
-        content.addView(task)
-
+        taskCard.addView(task, margins(bottom = 8))
         useScreen = CheckBox(this).apply {
-            text = "Include latest observed screen text in request"
+            text = "Include observed screen text"
+            textSize = 13f
+            setTextColor(ink)
             isChecked = true
+            buttonTintList = android.content.res.ColorStateList.valueOf(accent)
         }
-        content.addView(useScreen)
+        taskCard.addView(useScreen, margins(bottom = 12))
+        askButton = actionButton("Ask Gemini", accent, white)
+        askButton.setOnClickListener { sendGeminiRequest() }
+        taskCard.addView(askButton, margins(bottom = 8))
+        content.addView(taskCard, margins(bottom = 14))
 
-        content.addView(Button(this).apply {
-            text = "Ask Gemini"
-            setOnClickListener { sendGeminiRequest() }
-        })
+        val answerCard = card(white)
+        answerCard.addView(sectionTitle("03  ·  GEMINI RESPONSE"))
+        answerView = TextView(this).apply {
+            text = "Your answer will appear here. After tapping Ask Gemini, wait for the response or an error message."
+            textSize = 14f
+            setTextColor(muted)
+            setLineSpacing(dp(3).toFloat(), 1f)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = rounded(Color.rgb(247, 247, 252), 16)
+        }
+        answerCard.addView(answerView, margins(bottom = 8))
+        content.addView(answerCard, margins(bottom = 14))
 
-        content.addView(Button(this).apply {
-            text = "Open Accessibility Settings"
-            setOnClickListener {
-                startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-        })
-
-        content.addView(Button(this).apply {
-            text = "Refresh observed screen text"
-            setOnClickListener { refreshScreenText() }
-        })
-
-        content.addView(label("Latest observed screen text (local)"))
+        val screenCard = card(white)
+        screenCard.addView(sectionTitle("04  ·  SCREEN OBSERVATION"))
+        screenCard.addView(TextView(this).apply {
+            text = "Enable the accessibility service, open the app you want to inspect, then return here and refresh."
+            textSize = 13f
+            setTextColor(muted)
+        }, margins(bottom = 10))
+        val accessButton = actionButton("Open Accessibility Settings", Color.rgb(238, 235, 255), accent)
+        accessButton.setOnClickListener {
+            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        screenCard.addView(accessButton, margins(bottom = 8))
+        val refreshButton = actionButton("Refresh observed screen text", Color.rgb(239, 240, 247), ink)
+        refreshButton.setOnClickListener { refreshScreenText() }
+        screenCard.addView(refreshButton, margins(bottom = 10))
         screenPreview = TextView(this).apply {
             textSize = 12f
-            setTextColor(Color.rgb(65, 70, 80))
-            setPadding(10, 10, 10, 10)
-            setBackgroundColor(Color.WHITE)
+            setTextColor(ink)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = rounded(Color.rgb(247, 247, 252), 16)
             text = prefs.getString("latest_screen_text", "").orEmpty().ifBlank {
-                "No screen text yet. Start a session and enable Pocket Agent in Accessibility settings."
+                "No screen text captured yet."
             }
         }
-        content.addView(screenPreview)
+        screenCard.addView(screenPreview)
+        content.addView(screenCard, margins(bottom = 14))
 
+        val controlsCard = card(white)
+        controlsCard.addView(sectionTitle("05  ·  SESSION CONTROL"))
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        controls.addView(Button(this).apply {
-            text = "Start"
-            setOnClickListener {
-                prefs.edit().putBoolean("session_active", true).apply()
-                status.text = "Session started. Screen labels are observed locally; automatic taps are off."
-                refreshScreenText()
-            }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        controls.addView(Button(this).apply {
-            text = "Pause"
-            setOnClickListener {
-                prefs.edit().putBoolean("session_active", false).apply()
-                status.text = "Session paused. Screen observation is off."
-            }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        controls.addView(Button(this).apply {
-            text = "Stop"
-            setOnClickListener {
-                prefs.edit().putBoolean("session_active", false)
-                    .putString("latest_screen_text", "").apply()
-                screenPreview.text = "Screen text cleared."
-                status.text = "Session stopped. Local screen text cleared."
-            }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        content.addView(controls)
-
-        status = TextView(this).apply {
-            text = "Ready. Your API key is not saved."
-            textSize = 14f
-            setPadding(0, 14, 0, 8)
-            setTextColor(Color.rgb(35, 70, 50))
+        val start = actionButton("Start", accent, white)
+        start.setOnClickListener {
+            prefs.edit().putBoolean("session_active", true).apply()
+            status.text = "Observation started"
+            refreshScreenText()
         }
-        content.addView(status)
+        val pause = actionButton("Pause", Color.rgb(238, 235, 255), accent)
+        pause.setOnClickListener {
+            prefs.edit().putBoolean("session_active", false).apply()
+            status.text = "Observation paused"
+        }
+        val stop = actionButton("Stop", Color.rgb(255, 235, 237), Color.rgb(180, 50, 70))
+        stop.setOnClickListener {
+            prefs.edit().putBoolean("session_active", false).putString("latest_screen_text", "").apply()
+            screenPreview.text = "Screen text cleared."
+            status.text = "Observation stopped"
+        }
+        controls.addView(start, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
+        controls.addView(pause, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5); marginEnd = dp(5) })
+        controls.addView(stop, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
+        controlsCard.addView(controls, margins(bottom = 12))
+        status = TextView(this).apply {
+            text = "Ready · API key is not saved"
+            textSize = 13f
+            setTextColor(muted)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(Color.rgb(247, 247, 252), 14)
+        }
+        controlsCard.addView(status)
+        content.addView(controlsCard, margins(bottom = 12))
 
         content.addView(TextView(this).apply {
-            text = "Privacy and control: your key stays in memory only. Screen labels stay on your phone unless you choose Ask Gemini with screen text enabled. This version does not tap, type, submit forms, install apps, or make purchases automatically."
+            text = "Privacy note: the key stays in memory only. If you enable screen text in your request, those labels are sent to Google Gemini. Avoid passwords and private information. Automatic tapping and typing are not implemented in this version."
             textSize = 12f
-            setPadding(0, 8, 0, 12)
+            setTextColor(muted)
+            setPadding(dp(4), dp(4), dp(4), dp(12))
         })
+
         setContentView(root)
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun rounded(color: Int, radius: Int): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+        }
+
+    private fun card(color: Int): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = rounded(color, 22)
+        elevation = dp(2).toFloat()
+    }
+
+    private fun margins(bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(bottom) }
+
+    private fun sectionTitle(value: String) = TextView(this).apply {
+        text = value
+        textSize = 12f
+        letterSpacing = 0.06f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(accent)
+        setPadding(0, 0, 0, dp(12))
     }
 
     private fun label(value: String) = TextView(this).apply {
         text = value
-        textSize = 14f
+        textSize = 13f
         setTypeface(null, Typeface.BOLD)
-        setPadding(0, 10, 0, 4)
+        setTextColor(ink)
+        setPadding(0, dp(3), 0, dp(6))
     }
 
     private fun field(hintText: String, password: Boolean): EditText = EditText(this).apply {
         hint = hintText
         textSize = 14f
-        setSingleLine(true)
+        setTextColor(ink)
+        setHintTextColor(muted)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        background = rounded(Color.rgb(247, 247, 252), 16)
         if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        setPadding(12, 8, 12, 8)
+        else inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    }
+
+    private fun actionButton(title: String, bg: Int, fg: Int) = Button(this).apply {
+        text = title
+        textSize = 13f
+        isAllCaps = false
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(fg)
+        background = rounded(bg, 16)
+        minHeight = dp(48)
+        stateListAnimator = null
+        elevation = 0f
+        setPadding(dp(12), dp(10), dp(12), dp(10))
     }
 
     private fun refreshScreenText() {
-        val text = getSharedPreferences("pocket_agent", MODE_PRIVATE)
-            .getString("latest_screen_text", "").orEmpty()
+        val text = prefs.getString("latest_screen_text", "").orEmpty()
         screenPreview.text = if (text.isBlank()) {
             "No screen text captured. Enable Pocket Agent in Accessibility settings, open the target app, then tap Refresh."
         } else text
@@ -177,18 +267,19 @@ class MainActivity : Activity() {
         val chosenModel = model.text.toString().trim().ifEmpty { "gemini-2.5-flash" }
         val userTask = task.text.toString().trim()
         if (key.isEmpty()) {
-            status.text = "Paste your Gemini API key first. It is not saved."
+            status.text = "Missing API key"
+            answerView.text = "Paste your Gemini API key in the Connection section first. The key is not saved by this app."
             return
         }
         if (userTask.isEmpty()) {
-            status.text = "Describe your task first."
+            status.text = "Missing task"
+            answerView.text = "Type what you want Gemini to help with, then tap Ask Gemini."
             return
         }
 
-        val screen = getSharedPreferences("pocket_agent", MODE_PRIVATE)
-            .getString("latest_screen_text", "").orEmpty()
+        val screen = prefs.getString("latest_screen_text", "").orEmpty()
         val prompt = buildString {
-            append("You are Pocket Agent, a careful Android screen assistant. Give concise, practical guidance. Never claim you performed actions. Do not request passwords, payment details, or secret codes.\n\n")
+            append("You are Pocket Agent, an Android screen assistant. Give clear, concise, actionable guidance based on the user's task. Be explicit that you cannot perform actions on the phone. Never claim you performed actions. Never request passwords, payment details, or secret codes.\n\n")
             append("User task:\n")
             append(userTask)
             if (useScreen.isChecked && screen.isNotBlank()) {
@@ -197,7 +288,10 @@ class MainActivity : Activity() {
             }
         }
 
-        status.text = "Contacting Gemini…"
+        askButton.isEnabled = false
+        askButton.text = "Connecting…"
+        status.text = "Sending request to Gemini…"
+        answerView.text = "Waiting for Gemini's response. Keep this screen open."
         Thread {
             var connection: HttpURLConnection? = null
             try {
@@ -229,14 +323,23 @@ class MainActivity : Activity() {
                     ?.optJSONObject(0)?.optJSONObject("content")
                     ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
                 if (answer.isBlank()) throw IllegalStateException("Gemini returned no text. Check the model name and API key.")
-                runOnUiThread { status.text = answer }
+                runOnUiThread {
+                    answerView.text = answer
+                    status.text = "Response received"
+                }
             } catch (e: Exception) {
                 runOnUiThread {
-                    status.text = "Request failed: " + (e.message ?: "unknown error") +
-                        ". Check internet, key, quota, and model."
+                    val message = "Request failed: " + (e.message ?: "unknown error") +
+                        "\n\nCheck internet, API key, model name, and Gemini quota."
+                    answerView.text = message
+                    status.text = "Gemini request failed"
                 }
             } finally {
                 connection?.disconnect()
+                runOnUiThread {
+                    askButton.isEnabled = true
+                    askButton.text = "Ask Gemini"
+                }
             }
         }.start()
     }
