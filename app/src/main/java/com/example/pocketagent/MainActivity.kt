@@ -14,6 +14,8 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.ArrayAdapter
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,7 +24,7 @@ import java.net.URL
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var model: EditText
+    private lateinit var model: Spinner
     private lateinit var apiKey: EditText
     private lateinit var task: EditText
     private lateinit var screenPreview: TextView
@@ -69,7 +71,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "Tell Gemini what you need help with. This build can give guidance and read visible screen labels, but it cannot tap other apps yet."
+            text = "Tell Gemini what you need help with. This build can give guidance and read visible screen labels, but it cannot tap other apps yet. Free API keys are allowed, subject to Google model access and quota."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -82,8 +84,31 @@ class MainActivity : Activity() {
         apiKey = field("Paste your key (kept in memory only)", true)
         setup.addView(apiKey, margins(bottom = 10))
         setup.addView(label("Model"))
-        model = field("gemini-3.8-flash", false).apply { setText("gemini-3.8-flash") }
-        setup.addView(model)
+        model = Spinner(this).apply {
+            val modelNames = listOf(
+                "Gemini 3.8 Flash — gemini-3.8-flash",
+                "Gemini 3.6 Flash — gemini-3.6-flash",
+                "Gemini 3.5 Flash-Lite — gemini-3.5-flash-lite",
+                "Gemini 3.1 Flash-Lite — gemini-3.1-flash-lite",
+                "Gemini 3 Flash Preview — gemini-3-flash-preview",
+                "Gemini 2.5 Flash — gemini-2.5-flash",
+                "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
+                "Gemini 2.5 Pro — gemini-2.5-pro"
+            )
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modelNames).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(0)
+            background = rounded(Color.rgb(247, 247, 252), 16)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+        }
+        setup.addView(model, margins(bottom = 8))
+        setup.addView(TextView(this).apply {
+            text = "Free API keys are supported. Free-tier access and daily limits depend on Google and the selected model; this app cannot unlock paid-only access. Choose a model below if one is unavailable for your key."
+            textSize = 12f
+            setTextColor(muted)
+            setLineSpacing(dp(2).toFloat(), 1f)
+        })
         content.addView(setup, margins(bottom = 14))
 
         val taskCard = card(white)
@@ -264,7 +289,7 @@ class MainActivity : Activity() {
 
     private fun sendGeminiRequest() {
         val key = apiKey.text.toString().trim()
-        val chosenModel = model.text.toString().trim().ifEmpty { "gemini-3.8-flash" }
+        val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
         val userTask = task.text.toString().trim()
         if (key.isEmpty()) {
             status.text = "Missing API key"
@@ -307,7 +332,7 @@ class MainActivity : Activity() {
                 val body = JSONObject()
                     .put("contents", JSONArray().put(JSONObject()
                         .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                    .put("generationConfig", JSONObject().put("temperature", 0.3))
+
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
