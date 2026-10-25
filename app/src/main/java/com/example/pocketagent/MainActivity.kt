@@ -20,6 +20,8 @@ import android.widget.ArrayAdapter
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -33,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var useScreen: CheckBox
     private lateinit var askButton: Button
     private lateinit var prefs: android.content.SharedPreferences
+    private lateinit var securePrefs: android.content.SharedPreferences
 
     private val ink = Color.rgb(27, 30, 47)
     private val muted = Color.rgb(115, 119, 139)
@@ -43,6 +46,14 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
+        securePrefs = try {
+            val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+            EncryptedSharedPreferences.create(this, "pocket_agent_secrets", masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+        } catch (_: Exception) {
+            getSharedPreferences("pocket_agent_secrets_fallback", MODE_PRIVATE)
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -85,7 +96,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "Tell Gemini what you need help with. This build can give guidance and read visible screen labels, but it cannot tap other apps yet. Free API keys are allowed, subject to Google model access and quota."
+            text = "A calmer, faster AI workspace for your phone. Save your key securely, review task history, and control screen observation. Automated tapping and typing are still being built and are not available in this build."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -95,16 +106,26 @@ class MainActivity : Activity() {
         val setup = card(white)
         setup.addView(sectionTitle("01  ·  CONNECTION"))
         setup.addView(label("Gemini API key"))
-        apiKey = field("Paste your key (kept in memory only)", true)
-        setup.addView(apiKey, margins(bottom = 10))
+        apiKey = field("Paste your Gemini API key once", true).apply {
+            setText(securePrefs.getString("gemini_api_key", "").orEmpty())
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) securePrefs.edit().putString("gemini_api_key", text.toString().trim()).apply()
+            }
+        }
+        setup.addView(apiKey, margins(bottom = 6))
+        val saveKeyButton = actionButton("Save key securely on this phone", Color.rgb(30, 215, 96), Color.rgb(10, 18, 14))
+        saveKeyButton.setOnClickListener {
+            val value = apiKey.text.toString().trim()
+            if (value.isBlank()) status.text = "Paste your key first"
+            else {
+                securePrefs.edit().putString("gemini_api_key", value).apply()
+                status.text = "API key saved encrypted on this phone"
+            }
+        }
+        setup.addView(saveKeyButton, margins(bottom = 10))
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
-                "Gemini 3.8 Flash — gemini-3.8-flash",
-                "Gemini 3.6 Flash — gemini-3.6-flash",
-                "Gemini 3.5 Flash-Lite — gemini-3.5-flash-lite",
-                "Gemini 3.1 Flash-Lite — gemini-3.1-flash-lite",
-                "Gemini 3 Flash Preview — gemini-3-flash-preview",
                 "Gemini 2.5 Flash — gemini-2.5-flash",
                 "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
                 "Gemini 2.5 Pro — gemini-2.5-pro"
@@ -217,7 +238,7 @@ class MainActivity : Activity() {
         controls.addView(stop, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
         controlsCard.addView(controls, margins(bottom = 12))
         status = TextView(this).apply {
-            text = "Ready · API key is not saved"
+            text = if (securePrefs.getString("gemini_api_key", "").isNullOrBlank()) "Ready · add your API key" else "Ready · encrypted key found"
             textSize = 13f
             setTextColor(muted)
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -366,7 +387,7 @@ class MainActivity : Activity() {
     }
 
     private fun sendGeminiRequest() {
-        val key = apiKey.text.toString().trim()
+        val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
         val userTask = task.text.toString().trim()
         if (key.isEmpty()) {
@@ -404,13 +425,14 @@ class MainActivity : Activity() {
                     .openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 15000
-                    readTimeout = 60000
+                    readTimeout = 30000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 }
                 val body = JSONObject()
                     .put("contents", JSONArray().put(JSONObject()
                         .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                    .put("generationConfig", JSONObject().put("temperature", 0.3).put("maxOutputTokens", 700))
 
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
