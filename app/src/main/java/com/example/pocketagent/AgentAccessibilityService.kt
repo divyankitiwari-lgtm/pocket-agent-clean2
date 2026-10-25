@@ -37,7 +37,7 @@ class AgentAccessibilityService : AccessibilityService() {
             return
         }
         if (agentTab != null) {
-            agentStatus?.text = "● Pocket Agent · Running"
+            agentStatus?.text = prefs.getString("current_agent_status", "● Pocket Agent · Running").orEmpty()
             return
         }
         try {
@@ -50,7 +50,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 elevation = dp(8).toFloat()
             }
             val label = TextView(this).apply {
-                text = "● Pocket Agent · Running"
+                text = prefs.getString("current_agent_status", "● Pocket Agent · Running").orEmpty()
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.WHITE)
@@ -218,6 +218,7 @@ class AgentAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        handler.removeCallbacks(poller)
         removeAgentTab()
         super.onDestroy()
     }
