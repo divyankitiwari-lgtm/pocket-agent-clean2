@@ -1,26 +1,32 @@
 package com.example.pocketagent
 
 import android.accessibilityservice.AccessibilityService
-import android.view.accessibility.AccessibilityEvent
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.graphics.Path
+import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
 import android.view.Gravity
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Button
-import android.view.accessibility.AccessibilityNodeInfo
 
 /**
- * Reads visible UI labels locally only while the user has started a session.
- * It does not click, type, submit forms, or transmit screen content.
+ * Screen-control layer for Pocket Agent.
+ * Actions only run after the user explicitly starts an agent session.
+ * Screen labels stay local until the foreground agent sends them to Gemini.
  */
 class AgentAccessibilityService : AccessibilityService() {
     private var agentTab: LinearLayout? = null
     private var agentStatus: TextView? = null
     private var windowManager: WindowManager? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
@@ -31,8 +37,7 @@ class AgentAccessibilityService : AccessibilityService() {
 
     private fun syncAgentTab() {
         val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
-        val active = prefs.getBoolean("session_active", false)
-        if (!active) {
+        if (!prefs.getBoolean("session_active", false)) {
             removeAgentTab()
             return
         }
@@ -65,7 +70,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 background = pill(Color.rgb(117, 92, 255), 18)
                 setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
-                    prefs.edit().putBoolean("session_active", false).apply()
+                    prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
                     removeAgentTab()
                 }
             }
@@ -90,7 +95,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                android.graphics.PixelFormat.TRANSLUCENT
+                PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.END
                 x = dp(10)
@@ -100,23 +105,21 @@ class AgentAccessibilityService : AccessibilityService() {
             agentTab = panel
             agentStatus = label
         } catch (_: Exception) {
-            // The core service remains usable if this Android version blocks the overlay.
+            // Overlay failure does not disable the underlying accessibility service.
         }
     }
 
     private fun removeAgentTab() {
-        try {
-            agentTab?.let { windowManager?.removeView(it) }
-        } catch (_: Exception) { }
+        try { agentTab?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         agentTab = null
         agentStatus = null
     }
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
     private val poller = object : Runnable {
         override fun run() {
             syncAgentTab()
             processActiveWindow()
-            handler.postDelayed(this, 650)
+            handler.postDelayed(this, 500)
         }
     }
 
@@ -124,8 +127,7 @@ class AgentAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
             .putBoolean("accessibility_connected", true)
-            .putString("accessibility_status", "connected")
-            .apply()
+            .putString("accessibility_status", "connected").apply()
         handler.removeCallbacks(poller)
         handler.post(poller)
     }
@@ -140,49 +142,90 @@ class AgentAccessibilityService : AccessibilityService() {
         val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
         prefs.edit().putLong("last_accessibility_event", System.currentTimeMillis()).apply()
         if (!prefs.getBoolean("session_active", false)) return
-        val root = rootInActiveWindow ?: return
+
         val pending = prefs.getString("pending_action", "").orEmpty()
         if (pending.isNotBlank()) {
+            // Clear first so a repeated accessibility event cannot execute the same command twice.
             prefs.edit().putString("pending_action", "").apply()
             try {
                 val command = org.json.JSONObject(pending)
-                when (command.optString("action")) {
+                val action = command.optString("action")
+                val value = command.optString("text").trim()
+                val result = when (action) {
                     "tap_text" -> {
-                        val target = command.optString("text").trim()
-                        if (target.isNotEmpty()) {
-                            val node = findNodeByText(root, target)
-                            val clicked = node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
-                            prefs.edit().putString("last_action_result",
-                                if (clicked) "Tapped: $target" else "Could not find/click: $target").apply()
-                        }
+                        if (value.isEmpty()) "Tap skipped: target text was empty"
+                        else if (clickNodeByText(rootInActiveWindow, value)) "Tapped visible control: $value"
+                        else "Could not find/click visible control: $value"
                     }
                     "type_text" -> {
-                        val target = findFocusedEditable(root)
-                        val value = command.optString("text")
-                        val args = android.os.Bundle().apply {
-                            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+                        val target = findFocusedEditable(rootInActiveWindow)
+                        if (target == null) "Typing failed: no focused editable field"
+                        else {
+                            val args = Bundle().apply {
+                                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+                            }
+                            if (target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args))
+                                "Entered text in focused field"
+                            else "Typing failed: field rejected text"
                         }
-                        val typed = target?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) == true
-                        prefs.edit().putString("last_action_result",
-                            if (typed) "Entered text in focused field" else "No editable field focused").apply()
                     }
-                    "back" -> {
-                        val ok = performGlobalAction(GLOBAL_ACTION_BACK)
-                        prefs.edit().putString("last_action_result", if (ok) "Pressed Back" else "Back action failed").apply()
-                    }
-                    else -> prefs.edit().putString("last_action_result", "Unsupported action").apply()
+                    "scroll_down" -> if (scrollWindow(true)) "Scrolled down" else "Scroll down failed"
+                    "scroll_up" -> if (scrollWindow(false)) "Scrolled up" else "Scroll up failed"
+                    "back" -> if (performGlobalAction(GLOBAL_ACTION_BACK)) "Pressed Back" else "Back action failed"
+                    "home" -> if (performGlobalAction(GLOBAL_ACTION_HOME)) "Pressed Home" else "Home action failed"
+                    "open_app" -> openAppByLabel(value)
+                    else -> "Unsupported action: $action"
                 }
+                prefs.edit().putString("last_action_result", result).apply()
             } catch (e: Exception) {
                 prefs.edit().putString("last_action_result", "Action error: " + (e.message ?: "unknown")).apply()
             }
         }
+
+        val root = rootInActiveWindow ?: return
         val labels = ArrayList<String>()
         collectVisibleLabels(root, labels, 0)
-        prefs.edit().putString("latest_screen_text", labels.distinct().take(100).joinToString("\\n")).apply()
+        prefs.edit().putString("latest_screen_text", labels.distinct().take(120).joinToString("\n")).apply()
+    }
+
+    private fun openAppByLabel(query: String): String {
+        if (query.isBlank()) return "Open app failed: app name was empty"
+        val pm = packageManager
+        val apps = pm.getInstalledApplications(0)
+        val match = apps.firstOrNull { app ->
+            val launch = pm.getLaunchIntentForPackage(app.packageName)
+            launch != null && (pm.getApplicationLabel(app).toString().equals(query, true) ||
+                pm.getApplicationLabel(app).toString().contains(query, true))
+        } ?: return "Could not find an installed app matching: $query"
+        val launch = pm.getLaunchIntentForPackage(match.packageName)
+            ?: return "No launcher activity for: $query"
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(launch)
+        return "Opened app: " + pm.getApplicationLabel(match)
+    }
+
+    private fun scrollWindow(down: Boolean): Boolean {
+        val root = rootInActiveWindow ?: return false
+        if (scrollNode(root, down)) return true
+        val metrics = resources.displayMetrics
+        val x = metrics.widthPixels * 0.5f
+        val startY = if (down) metrics.heightPixels * 0.78f else metrics.heightPixels * 0.28f
+        val endY = if (down) metrics.heightPixels * 0.28f else metrics.heightPixels * 0.78f
+        val path = Path().apply { moveTo(x, startY); lineTo(x, endY) }
+        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 380)
+        return dispatchGesture(android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build(), null, null)
+    }
+
+    private fun scrollNode(node: AccessibilityNodeInfo?, down: Boolean): Boolean {
+        if (node == null) return false
+        val action = if (down) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+        if (node.isScrollable && node.performAction(action)) return true
+        for (i in 0 until node.childCount) if (scrollNode(node.getChild(i), down)) return true
+        return false
     }
 
     private fun collectVisibleLabels(node: AccessibilityNodeInfo?, out: MutableList<String>, depth: Int) {
-        if (node == null || depth > 18 || out.size >= 100) return
+        if (node == null || depth > 20 || out.size >= 120) return
         if (!node.isPassword) {
             node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(out::add)
             node.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(out::add)
@@ -190,19 +233,19 @@ class AgentAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) collectVisibleLabels(node.getChild(i), out, depth + 1)
     }
 
-    private fun findNodeByText(node: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
-        if (node == null) return null
-        val found = node.findAccessibilityNodeInfosByText(target)
-        for (candidate in found) {
-            if (candidate.isClickable) return candidate
+    private fun clickNodeByText(root: AccessibilityNodeInfo?, target: String): Boolean {
+        if (root == null) return false
+        val candidates = root.findAccessibilityNodeInfosByText(target)
+        for (candidate in candidates) {
+            if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
             var parent = candidate.parent
             var depth = 0
-            while (parent != null && depth++ < 5) {
-                if (parent.isClickable) return parent
+            while (parent != null && depth++ < 6) {
+                if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
                 parent = parent.parent
             }
         }
-        return null
+        return false
     }
 
     private fun findFocusedEditable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
@@ -223,11 +266,10 @@ class AgentAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onUnbind(intent: android.content.Intent?): Boolean {
+    override fun onUnbind(intent: Intent?): Boolean {
         getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
             .putBoolean("accessibility_connected", false)
-            .putString("accessibility_status", "disconnected")
-            .apply()
+            .putString("accessibility_status", "disconnected").apply()
         return super.onUnbind(intent)
     }
 }
