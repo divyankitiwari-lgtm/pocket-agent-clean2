@@ -9,9 +9,18 @@ import android.view.accessibility.AccessibilityNodeInfo
  * It does not click, type, submit forms, or transmit screen content.
  */
 class AgentAccessibilityService : AccessibilityService() {
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
+            .putBoolean("accessibility_connected", true)
+            .putString("accessibility_status", "connected")
+            .apply()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
         val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
+        if (event == null) return
+        prefs.edit().putLong("last_accessibility_event", System.currentTimeMillis()).apply()
         if (!prefs.getBoolean("session_active", false)) return
 
         val root = rootInActiveWindow ?: return
@@ -30,4 +39,12 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() = Unit
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
+            .putBoolean("accessibility_connected", false)
+            .putString("accessibility_status", "disconnected")
+            .apply()
+        return super.onUnbind(intent)
+    }
 }
