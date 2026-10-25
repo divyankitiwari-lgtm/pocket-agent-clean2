@@ -82,7 +82,7 @@ class MainActivity : Activity() {
         apiKey = field("Paste your key (kept in memory only)", true)
         setup.addView(apiKey, margins(bottom = 10))
         setup.addView(label("Model"))
-        model = field("gemini-2.5-flash", false).apply { setText("gemini-2.5-flash") }
+        model = field("gemini-3.8-flash", false).apply { setText("gemini-3.8-flash") }
         setup.addView(model)
         content.addView(setup, margins(bottom = 14))
 
@@ -264,7 +264,7 @@ class MainActivity : Activity() {
 
     private fun sendGeminiRequest() {
         val key = apiKey.text.toString().trim()
-        val chosenModel = model.text.toString().trim().ifEmpty { "gemini-2.5-flash" }
+        val chosenModel = model.text.toString().trim().ifEmpty { "gemini-3.8-flash" }
         val userTask = task.text.toString().trim()
         if (key.isEmpty()) {
             status.text = "Missing API key"
