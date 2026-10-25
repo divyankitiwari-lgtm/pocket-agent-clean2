@@ -534,9 +534,11 @@ class MainActivity : Activity() {
                     val instruction = """
 You control an Android screen through an accessibility service. Return ONLY one JSON object, no markdown:
 {"action":"tap_text","text":"exact visible label","reason":"brief reason"}
-Allowed actions: tap_text, type_text, back, done, ask_user.
-For type_text use {"action":"type_text","text":"text to enter","reason":"..."} only when an editable field is visibly focused.
-For back use {"action":"back","text":"","reason":"..."}; done uses {"action":"done","text":"completion summary","reason":"..."}; ask_user uses {"action":"ask_user","text":"what user must decide","reason":"..."}.
+Allowed actions: open_app, tap_text, type_text, scroll_down, scroll_up, back, home, done, ask_user.
+Use open_app to launch an installed app by its visible app name, e.g. {"action":"open_app","text":"YouTube","reason":"..."}.
+Use tap_text only for a visible UI label. Use type_text only when an editable field is visibly focused.
+Use scroll_down or scroll_up when the target content is not visible. Use back or home only when useful for the task.
+For done use {"action":"done","text":"completion summary","reason":"..."}; ask_user uses {"action":"ask_user","text":"what user must decide","reason":"..."}.
 User task: ${userTask}
 Step: ${step} of 25
 Visible screen text:
@@ -556,16 +558,20 @@ Rules: act only on visible labels. Never invent buttons. Do not enter passwords,
                     when (action) {
                         "done" -> { runOnUiThread { answerView.text = "Task finished\\n\\n" + textValue; status.text = "Agent completed" }; break }
                         "ask_user" -> { runOnUiThread { answerView.text = "Agent needs your input\\n\\n" + textValue; status.text = "Waiting for user" }; break }
-                        "tap_text", "type_text", "back" -> {
-                            prefs.edit().putString("last_action_result", "").putString("pending_action", JSONObject().put("action", action).put("text", textValue).toString()).apply()
+                        "open_app", "tap_text", "type_text", "scroll_down", "scroll_up", "back", "home" -> {
+                            // Reset the previous result so a timeout cannot be mistaken for a successful action.
+                            prefs.edit().putString("last_action_result", "")
+                                .putString("pending_action", JSONObject().put("action", action).put("text", textValue).toString()).apply()
                             var waited = 0
-                            while (agentRunning && waited < 5000) {
-                                val result = prefs.getString("last_action_result", "").orEmpty()
-                                if (result.isNotBlank()) { lastResult = result; break }
-                                Thread.sleep(250); waited += 250
+                            var actionResult = ""
+                            while (agentRunning && prefs.getBoolean("session_active", false) && waited < 6000) {
+                                actionResult = prefs.getString("last_action_result", "").orEmpty()
+                                if (actionResult.isNotBlank()) break
+                                Thread.sleep(200)
+                                waited += 200
                             }
-                            if (lastResult.isBlank()) lastResult = "No action confirmation received; checking screen again."
-                            Thread.sleep(650)
+                            lastResult = actionResult.ifBlank { "No action confirmation received; re-checking the screen." }
+                            Thread.sleep(700)
                         }
                         else -> { runOnUiThread { answerView.text = "Unsupported action: " + action; status.text = "Agent paused for safety" }; break }
                     }
