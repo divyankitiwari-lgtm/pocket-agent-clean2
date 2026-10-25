@@ -136,6 +136,13 @@ class MainActivity : Activity() {
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
+                "Gemini 3.8 Flash — gemini-3.8-flash",
+                "Gemini 3.7 Flash — gemini-3.7-flash",
+                "Gemini 3.6 Flash — gemini-3.6-flash",
+                "Gemini 3.5 Flash — gemini-3.5-flash",
+                "Gemini 3 Flash Preview — gemini-3-flash-preview",
+                "Gemini 3.5 Flash-Lite — gemini-3.5-flash-lite",
+                "Gemini 3.1 Flash-Lite — gemini-3.1-flash-lite",
                 "Gemini 2.5 Flash — gemini-2.5-flash",
                 "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
                 "Gemini 2.5 Pro — gemini-2.5-pro"
