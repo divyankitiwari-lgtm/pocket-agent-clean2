@@ -381,20 +381,33 @@ class MainActivity : Activity() {
         }
         val start = actionButton("Start", accent, white)
         start.setOnClickListener {
-            prefs.edit().putBoolean("session_active", true).apply()
-            status.text = "Observation started"
-            refreshScreenText()
+            if (agentRunning) {
+                prefs.edit().putBoolean("agent_paused", false).putBoolean("session_active", true)
+                    .putString("current_agent_status", "● Pocket Agent · Resuming").apply()
+                status.text = "Agent resumed"
+            } else {
+                prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false).apply()
+                status.text = "Observation started"
+                refreshScreenText()
+            }
         }
         val pause = actionButton("Pause", Color.rgb(238, 235, 255), accent)
         pause.setOnClickListener {
-            prefs.edit().putBoolean("session_active", false).apply()
-            status.text = "Observation paused"
+            if (agentRunning) {
+                prefs.edit().putBoolean("agent_paused", true).putString("current_agent_status", "Ⅱ Pocket Agent · Paused").apply()
+                status.text = "Agent paused · tap Start to resume"
+            } else {
+                prefs.edit().putBoolean("session_active", false).apply()
+                status.text = "Observation paused"
+            }
         }
         val stop = actionButton("Stop", Color.rgb(255, 235, 237), Color.rgb(180, 50, 70))
         stop.setOnClickListener {
-            prefs.edit().putBoolean("session_active", false).putString("latest_screen_text", "").apply()
+            agentRunning = false
+            prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
+                .putString("pending_action", "").putString("latest_screen_text", "").apply()
             screenPreview.text = "Screen text cleared."
-            status.text = "Observation stopped"
+            status.text = "Observation and automation stopped"
         }
         controls.addView(start, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
         controls.addView(pause, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5); marginEnd = dp(5) })
@@ -495,7 +508,8 @@ class MainActivity : Activity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Log out") { _, _ ->
                 agentRunning = false
-                prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
+                prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
+                    .putBoolean("admin_verified_by_firebase", false).putString("pending_action", "").apply()
                 firebaseAuth?.signOut()
                 status.text = "Signed out · automation stopped"
                 answerView.text = "Sign in with your account to continue."
@@ -621,11 +635,10 @@ class MainActivity : Activity() {
         prefs.getBoolean("admin_verified_by_firebase", false) && firebaseAuth?.currentUser != null
 
     private fun refreshAdminClaim(user: FirebaseUser?) {
-        if (user == null) {
-            prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
-            return
-        }
-        user.getIdToken(false).addOnSuccessListener { token ->
+        // Clear any cached role before checking the currently signed-in user's token.
+        prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
+        if (user == null) return
+        user.getIdToken(true).addOnSuccessListener { token ->
             val admin = token.claims["admin"] == true
             prefs.edit().putBoolean("admin_verified_by_firebase", admin).apply()
             if (admin) runOnUiThread { showAdminBanner() }
@@ -641,9 +654,10 @@ class MainActivity : Activity() {
     }
 
     private fun currentPlan(): String {
-        // Verified admins may switch the local test preview among tiers. This does
-        // not change server-side paid entitlements or the Firestore authorization role.
-        val chosen = prefs.getString("selected_plan", if (isAdminAccount()) "Max" else "Free").orEmpty()
+        // Only verified admins may change a local test preview. Normal accounts remain
+        // on Free until a trusted backend supplies a verified paid entitlement.
+        if (!isAdminAccount()) return "Free"
+        val chosen = prefs.getString("selected_plan", "Free").orEmpty()
         return if (chosen in listOf("Free", "Premium", "Max")) chosen else "Free"
     }
 
@@ -659,17 +673,9 @@ class MainActivity : Activity() {
                 }.setNegativeButton("Cancel", null).show()
             return
         }
-        val plans = arrayOf("Free · ₹0 · 60 steps per task", "Premium · 4-hour task sessions", "Max · no app-imposed step cap")
-        AlertDialog.Builder(this).setTitle("Choose a plan")
-            .setSingleChoiceItems(plans, listOf("Free", "Premium", "Max").indexOf(currentPlan())) { dialog, which ->
-                val selected = listOf("Free", "Premium", "Max")[which]
-                prefs.edit().putString("selected_plan", selected).apply()
-                status.text = "$selected plan selected · prototype only"
-                dialog.dismiss()
-                AlertDialog.Builder(this).setTitle("$selected selected")
-                    .setMessage("Local prototype selection only. Real payments and verified entitlements are not connected. API limits still apply.")
-                    .setPositiveButton("OK", null).show()
-            }.setNegativeButton("Cancel", null).show()
+        AlertDialog.Builder(this).setTitle("Pocket Agent plans")
+            .setMessage("Your account currently uses the Free tier (60 steps per task). Paid plans are not available in this build because secure Google Play Billing and server-verified entitlements have not been configured. Selecting a plan here must never unlock paid limits.")
+            .setPositiveButton("OK", null).show()
     }
 
     private fun showWelcomeGate() {
@@ -812,12 +818,12 @@ class MainActivity : Activity() {
         setPadding(dp(16), dp(16), dp(16), dp(16))
         background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.argb(248, 255, 255, 255), Color.argb(238, 246, 247, 255))
+            intArrayOf(Color.argb(222, 255, 255, 255), Color.argb(202, 246, 247, 255))
         ).apply {
-            cornerRadius = dp(24).toFloat()
-            setStroke(dp(1), Color.argb(190, 255, 255, 255))
+            cornerRadius = dp(26).toFloat()
+            setStroke(dp(1), Color.argb(220, 255, 255, 255))
         }
-        elevation = dp(5).toFloat()
+        elevation = dp(8).toFloat()
     }
 
     private fun margins(bottom: Int = 0): LinearLayout.LayoutParams =
@@ -1001,7 +1007,9 @@ class MainActivity : Activity() {
             status.text = "Stopping agent…"; agentButton.text = "▶ Start autonomous agent"; return
         }
         agentRunning = true
-        prefs.edit().putBoolean("session_active", true).putString("current_agent_status", "● Pocket Agent · Starting").putString("last_task", userTask).putString("pending_action", "").putString("last_action_result", "").apply()
+        prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false)
+            .putString("current_agent_status", "● Pocket Agent · Starting").putString("last_task", userTask)
+            .putString("pending_action", "").putString("last_action_result", "").apply()
         agentButton.text = "■ Stop agent"
         status.text = "Agent starting · it will open the requested app and act step by step"
         logCommunication("AGENT START", userTask)
@@ -1014,6 +1022,9 @@ class MainActivity : Activity() {
                 while (agentRunning &&
                     (currentPlan() != "Free" || step <= 60) &&
                     (currentPlan() != "Premium" || System.currentTimeMillis() - sessionStartedAt < 4L * 60L * 60L * 1000L)) {
+                    while (agentRunning && prefs.getBoolean("agent_paused", false)) {
+                        Thread.sleep(200)
+                    }
                     if (!agentRunning || !prefs.getBoolean("session_active", false)) break
                     var screen = prefs.getString("latest_screen_text", "").orEmpty()
                     if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
@@ -1133,7 +1144,8 @@ Previous action result: ${lastResult.take(500)}
                 runOnUiThread { answerView.append("\\n⚠ Agent stopped: " + (e.message ?: "request failed")); status.text = "Agent stopped · check connection or model settings" }
             } finally {
                 agentRunning = false
-                prefs.edit().putBoolean("session_active", false).putString("current_agent_status", "● Pocket Agent · Stopped").putString("pending_action", "").apply()
+                prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
+                    .putString("current_agent_status", "● Pocket Agent · Stopped").putString("pending_action", "").apply()
                 runOnUiThread { agentButton.text = "▶ Run task" }
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
