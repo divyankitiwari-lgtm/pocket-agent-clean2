@@ -870,10 +870,9 @@ ${screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
 """.trimIndent()
                     val raw = when (mode) {
-                        1 -> try {
-                            generateLocalAi(instruction)
-                        } catch (localError: Exception) {
-                            logCommunication("LOCAL AI FALLBACK", "On-device inference failed: " + (localError.message ?: "unknown error") + ". Trying safe local rules for this step.")
+                        1 -> {
+                            // Prevent crashes from an unvalidated native model/runtime pair.
+                            logCommunication("LOCAL AI", "Using safe on-device rules planner until this .task model is validated.")
                             localRulePlan(userTask, screen, lastResult)
                         }
                         2 -> localRulePlan(userTask, screen, lastResult)
