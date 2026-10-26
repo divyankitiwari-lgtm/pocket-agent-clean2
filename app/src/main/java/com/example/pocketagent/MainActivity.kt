@@ -451,27 +451,26 @@ class MainActivity : Activity() {
         val taskLower = userTask.lowercase()
         fun command(action: String, text: String, reason: String) =
             JSONObject().put("action", action).put("text", text).put("reason", reason).toString()
-        if (screen.isBlank() || (lower.contains("pocket agent") && !lower.contains("quiz and earn") && !lower.contains("mega offer"))) {
-            val app = if (taskLower.contains("quiz and earn")) "Quiz and Earn" else
-                Regex("(?:open|launch|go to)\\s+([A-Za-z0-9][A-Za-z0-9 &_-]{1,40})", RegexOption.IGNORE_CASE)
-                    .find(userTask)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', '?') ?: ""
-            if (app.isNotBlank()) return command("open_app", app, "The target app is not open.")
-            return command("ask_user", "Open the target app, then start the task again.", "Local rules need a visible target app.")
+        if (screen.isBlank() || lower.contains("pocket agent")) {
+            val app = Regex("(?:open|launch|switch to|go to)\\s+([A-Za-z0-9][A-Za-z0-9 &_.-]{1,48})", RegexOption.IGNORE_CASE)
+                .find(userTask)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', '?', '!') ?: ""
+            if (app.isNotBlank()) return command("open_app", app, "Opening the app requested in the task.")
+            return command("ask_user", "Open the app you want to automate, then run the task again.", "The current screen does not expose a target app yet.")
         }
         if (previousResult.contains("Could not find", true) || previousResult.contains("failed", true)) {
             return command("ask_user", "The last action failed. Check the screen and choose the next step.", previousResult.take(180))
         }
         val nodes = screen.lines().map { it.trim() }.filter { it.length in 2..90 }.distinct()
-        val keywords = when {
-            taskLower.contains("mega offer") -> listOf("mega offer", "mega offers")
-            taskLower.contains("claim") || taskLower.contains("reward") -> listOf("claim", "collect", "reward", "continue", "done")
-            taskLower.contains("quiz") -> listOf("quiz", "play", "start", "continue", "next")
-            taskLower.contains("search") -> listOf("search", "next", "continue")
-            else -> listOf("continue", "next", "done", "close")
+        // Generic cross-app fallback: only tap a label explicitly requested by the user.
+        // Do not guess common buttons such as Continue/Claim, which can trigger the wrong action.
+        val requestedLabel = Regex("(?:tap|click|press|select|open)\\s+[\"']?([^,.;!?\\n]{2,60})[\"']?", RegexOption.IGNORE_CASE)
+            .find(userTask)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', '?', '!')
+        if (!requestedLabel.isNullOrBlank()) {
+            val normalize = { value: String -> value.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim().replace(Regex("\\s+"), " ") }
+            val wanted = normalize(requestedLabel)
+            val exact = nodes.firstOrNull { normalize(it) == wanted }
+            if (exact != null) return command("tap_text", exact, "Exact visible label requested by the user.")
         }
-        val candidate = nodes.firstOrNull { line -> keywords.any { kw -> line.equals(kw, true) } }
-            ?: nodes.firstOrNull { line -> keywords.any { kw -> line.contains(kw, true) } }
-        if (candidate != null) return command("tap_text", candidate, "Matched a visible label to task keywords.")
         if (taskLower.contains("scroll") || screen.length > 1200) return command("scroll_down", "", "No matching label; inspect lower screen content.")
         return command("ask_user", "I couldn't match a safe button. Tell me which visible button to use.", "Local rules won't guess randomly.")
     }
