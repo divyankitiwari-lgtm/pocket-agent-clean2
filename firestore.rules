@@ -16,10 +16,9 @@ service cloud.firestore {
       // A client may create/update only profile fields. Role/plan entitlements
       // must be assigned by a trusted backend, not by a mobile client.
       allow create: if signedIn() && request.auth.uid == uid
-        && !request.resource.data.keys().hasAny(['admin', 'role', 'planEntitlement']);
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'createdAt', 'updatedAt']);
       allow update: if signedIn() && request.auth.uid == uid
-        && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['admin', 'role', 'planEntitlement']);
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'createdAt', 'updatedAt']);
       allow delete: if isAdmin();
     }
 
