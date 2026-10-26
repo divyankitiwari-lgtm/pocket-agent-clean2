@@ -691,16 +691,41 @@ class MainActivity : Activity() {
         panel.addView(name, margins(bottom = 8))
         panel.addView(email, margins(bottom = 8))
         panel.addView(password, margins(bottom = 8))
+        val resetPasswordButton = actionButton("Forgot password?", Color.rgb(238, 235, 255), accent).apply {
+            minHeight = dp(44)
+            minimumHeight = dp(44)
+            setOnClickListener {
+                val emailValue = email.text.toString().trim()
+                if (firebaseAuth == null || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches()) {
+                    status.text = "Enter your account email first; Firebase must be configured"
+                } else {
+                    isEnabled = false
+                    firebaseAuth!!.sendPasswordResetEmail(emailValue)
+                        .addOnSuccessListener {
+                            status.text = "Password reset email sent if that account exists"
+                            isEnabled = true
+                        }
+                        .addOnFailureListener { error ->
+                            status.text = "Could not send reset email: " + (error.message ?: "check connection")
+                            isEnabled = true
+                        }
+                }
+            }
+        }
+        panel.addView(resetPasswordButton, margins(bottom = 8))
         panel.addView(TextView(this).apply {
             text = if (firebaseAuth == null) "Firebase is not configured. Add app/google-services.json, enable Email/Password in Firebase Console, and create Firestore. No demo password is accepted as a real login."
                 else "Firebase Authentication manages passwords. Pocket Agent does not save passwords in local preferences."
             textSize = 12f
             setTextColor(muted)
         })
-        val dialog = AlertDialog.Builder(this).setTitle("Pocket Agent account")
-            .setMessage("Create an account or sign in securely.").setView(panel)
+        val firebaseReady = firebaseAuth != null && firestore != null
+        val dialog = AlertDialog.Builder(this).setTitle("Welcome to Pocket Agent")
+            .setMessage("Your account is protected by Firebase Authentication. Sign in or create an account to sync your profile and use admin features.")
+            .setView(panel)
             .setCancelable(false).setPositiveButton("Create account", null)
-            .setNegativeButton("Sign in", null).setNeutralButton("Setup help", null).create()
+            .setNegativeButton("Sign in", null)
+            .setNeutralButton(if (firebaseReady) "Setup help" else "Continue offline").create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val displayName = name.text.toString().trim()
@@ -773,9 +798,15 @@ class MainActivity : Activity() {
                     }
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                AlertDialog.Builder(this).setTitle("Firebase setup")
-                    .setMessage("1. Create a Firebase project. 2. Register Android package com.example.pocketagent. 3. Download google-services.json into app/. 4. Enable Email/Password Authentication. 5. Create Firestore and publish firestore.rules after testing. 6. Grant admin custom claims only from a trusted Admin SDK environment. Read FIREBASE_SECURITY_SETUP.md.")
-                    .setPositiveButton("OK", null).show()
+                if (firebaseAuth == null || firestore == null) {
+                    dialog.dismiss()
+                    status.text = "Offline mode · local rules and device automation remain available; cloud accounts and sync need Firebase setup."
+                    logCommunication("ACCOUNT", "Continued in offline mode because Firebase configuration is unavailable.")
+                } else {
+                    AlertDialog.Builder(this).setTitle("Firebase setup")
+                        .setMessage("1. Create a Firebase project. 2. Register Android package com.example.pocketagent. 3. Download google-services.json into app/. 4. Enable Email/Password Authentication. 5. Create Firestore and publish firestore.rules after testing. 6. Grant admin custom claims only from a trusted Admin SDK environment. Read FIREBASE_SECURITY_SETUP.md.")
+                        .setPositiveButton("OK", null).show()
+                }
             }
         }
         dialog.show()
