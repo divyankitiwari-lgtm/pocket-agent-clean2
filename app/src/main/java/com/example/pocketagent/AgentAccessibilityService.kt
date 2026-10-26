@@ -266,16 +266,18 @@ class AgentAccessibilityService : AccessibilityService() {
         fun collectMatches(node: AccessibilityNodeInfo?, depth: Int) {
             if (node == null || depth > 24 || candidates.size > 160) return
             val label = normalizeLabel(node.text ?: node.contentDescription)
-            if (label.isNotBlank() && (label == wanted || label.contains(wanted) || wanted.contains(label))) {
+            // Exact labels first; fuzzy matches are handled only by the platform's text search.
+            // Avoid matching a short fragment inside a different button label.
+            if (label.isNotBlank() && label == wanted) {
                 if (candidates.none { it == node }) candidates.add(node)
             }
             for (i in 0 until node.childCount) collectMatches(node.getChild(i), depth + 1)
         }
         collectMatches(root, 0)
         // Prefer the most exact label match and the nearest clickable parent.
-        val ordered = candidates.sortedBy { node ->
+        val ordered = candidates.distinctBy { normalizeLabel(it.text ?: it.contentDescription) }.sortedBy { node ->
             val label = normalizeLabel(node.text ?: node.contentDescription)
-            when { label == wanted -> 0; label.contains(wanted) -> 1; wanted.contains(label) -> 2; else -> 3 }
+            if (label == wanted) 0 else 1
         }
         for (candidate in ordered) {
             var current: AccessibilityNodeInfo? = candidate
@@ -349,9 +351,12 @@ class AgentAccessibilityService : AccessibilityService() {
             }
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             try { tapMarker?.let { wm.removeView(it) } } catch (_: Exception) { }
+            // Small visual marker around the tap center; actual gesture coordinates remain unchanged.
+            val markerWidth = dp(60)
+            val markerHeight = dp(40)
             val params = WindowManager.LayoutParams(
-                bounds.width().coerceAtLeast(dp(16)),
-                bounds.height().coerceAtLeast(dp(16)),
+                markerWidth,
+                markerHeight,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -359,8 +364,8 @@ class AgentAccessibilityService : AccessibilityService() {
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = bounds.left
-                y = bounds.top
+                x = (bounds.centerX() - markerWidth / 2).coerceAtLeast(0)
+                y = (bounds.centerY() - markerHeight / 2).coerceAtLeast(0)
             }
             wm.addView(marker, params)
             tapMarker = marker
