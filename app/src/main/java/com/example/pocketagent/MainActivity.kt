@@ -53,10 +53,10 @@ class MainActivity : Activity() {
     private var firebaseAuth: FirebaseAuth? = null
     private var firestore: FirebaseFirestore? = null
 
-    private val ink = Color.rgb(24, 28, 52)
-    private val muted = Color.rgb(104, 111, 139)
-    private val accent = Color.rgb(105, 78, 255)
-    private val page = Color.rgb(237, 242, 255)
+    private val ink = Color.rgb(29, 29, 31)
+    private val muted = Color.rgb(110, 110, 115)
+    private val accent = Color.rgb(0, 113, 227)
+    private val page = Color.rgb(245, 245, 247)
     private val white = Color.WHITE
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,28 +82,25 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(226, 235, 255), Color.rgb(248, 239, 255), Color.rgb(225, 248, 255))
-            )
+            setBackgroundColor(page)
         }
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(24))
+            setPadding(dp(20), dp(22), dp(20), dp(28))
         }
         contentLayout = content
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val topBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val menuButton = actionButton("☰  Menu & History", white, accent)
+        val menuButton = actionButton("☰  History", Color.rgb(255, 255, 255), ink)
         menuButton.setOnClickListener { showHistoryMenu() }
         topBar.addView(menuButton, LinearLayout.LayoutParams(-2, dp(46)))
-        val logoutButton = actionButton("↪ Logout", Color.rgb(255, 235, 237), Color.rgb(180, 50, 70))
+        val logoutButton = actionButton("Log out", Color.rgb(255, 255, 255), Color.rgb(190, 45, 50))
         logoutButton.setOnClickListener { confirmLogout() }
         topBar.addView(logoutButton, LinearLayout.LayoutParams(-2, dp(46)).apply { marginStart = dp(6) })
-        val liveButton = actionButton("◉ Live Activity", Color.rgb(30, 32, 48), Color.WHITE)
+        val liveButton = actionButton("◉ Live", Color.rgb(30, 30, 32), Color.WHITE)
         liveButton.setOnClickListener {
             val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank {
                 "No activity yet. Start a task to see each planned action and its result here."
@@ -166,23 +163,33 @@ class MainActivity : Activity() {
         topBar.addView(topStatus, LinearLayout.LayoutParams(0, dp(46), 1f))
         content.addView(topBar, margins(bottom = 10))
 
-        val hero = card(white).apply { setPadding(dp(20), dp(20), dp(20), dp(20)) }
+        val hero = card(Color.rgb(22, 22, 24)).apply {
+            setPadding(dp(22), dp(24), dp(22), dp(24))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(27, 28, 31), Color.rgb(12, 13, 15))
+            ).apply {
+                cornerRadius = dp(26).toFloat()
+                setStroke(dp(1), Color.rgb(52, 53, 56))
+            }
+            elevation = dp(3).toFloat()
+        }
         hero.addView(TextView(this).apply {
-            text = "✦  POCKET AGENT"
+            text = "✦  POCKET AGENT  /  AI ASSISTANT"
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
             letterSpacing = 0.12f
             setTextColor(accent)
         })
         hero.addView(TextView(this).apply {
-            text = "Your AI screen assistant"
-            textSize = 25f
+            text = "Your screen.\\nYour instructions."
+            textSize = 29f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(ink)
+            setTextColor(Color.WHITE)
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "Give one task. Pocket Agent plans privately, launches apps, taps, types, scrolls, and checks each result. Gemini stays in the background; this screen shows actions, not chat answers."
+            text = "One simple instruction. An assistant that can navigate apps, tap, type, and check each step. You stay in control with clear start, pause, and stop controls."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -893,20 +900,18 @@ class MainActivity : Activity() {
         GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(radius).toFloat()
-            setStroke(dp(1), Color.argb(105, 255, 255, 255))
+            setStroke(dp(1), Color.rgb(229, 229, 234))
         }
 
     private fun card(color: Int): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.argb(222, 255, 255, 255), Color.argb(202, 246, 247, 255))
-        ).apply {
-            cornerRadius = dp(26).toFloat()
-            setStroke(dp(1), Color.argb(220, 255, 255, 255))
+        setPadding(dp(18), dp(18), dp(18), dp(18))
+        background = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(24).toFloat()
+            setStroke(dp(1), if (color == Color.WHITE) Color.rgb(232, 232, 237) else Color.rgb(52, 53, 56))
         }
-        elevation = dp(8).toFloat()
+        elevation = dp(2).toFloat()
     }
 
     private fun margins(bottom: Int = 0): LinearLayout.LayoutParams =
@@ -935,26 +940,21 @@ class MainActivity : Activity() {
         setTextColor(ink)
         setHintTextColor(muted)
         setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.argb(176, 255, 255, 255), Color.argb(138, 232, 239, 255))
-        ).apply {
-            cornerRadius = dp(16).toFloat()
-            setStroke(dp(1), Color.argb(190, 255, 255, 255))
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(245, 245, 247))
+            cornerRadius = dp(14).toFloat()
+            setStroke(dp(1), Color.rgb(225, 225, 230))
         }
         if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         else inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
     }
 
     private fun actionButton(title: String, bg: Int, fg: Int) = Button(this).apply {
-        val normalBackground = GradientDrawable(
-            GradientDrawable.Orientation.LEFT_RIGHT,
-            if (bg == accent || bg == Color.rgb(30, 32, 48))
-                intArrayOf(accent, Color.rgb(71, 119, 255))
-            else intArrayOf(bg, blendWithWhite(bg))
-        ).apply {
-            cornerRadius = dp(17).toFloat()
-            setStroke(dp(1), Color.argb(100, 255, 255, 255))
+        val isPrimary = bg == accent || bg == Color.rgb(30, 32, 48)
+        val normalBackground = GradientDrawable().apply {
+            setColor(bg)
+            cornerRadius = dp(14).toFloat()
+            setStroke(dp(1), if (isPrimary) bg else Color.rgb(225, 225, 230))
         }
         text = title
         textSize = 13f
@@ -962,7 +962,7 @@ class MainActivity : Activity() {
         gravity = Gravity.CENTER
         textAlignment = View.TEXT_ALIGNMENT_CENTER
         setTypeface(null, Typeface.BOLD)
-        setTextColor(if (bg == accent || bg == Color.rgb(30, 32, 48)) Color.WHITE else fg)
+        setTextColor(if (isPrimary) Color.WHITE else fg)
         background = normalBackground
         // Keep the touch target unchanged; show a subtle pressed state instead of moving bounds.
         setOnTouchListener { view, event ->
@@ -972,11 +972,11 @@ class MainActivity : Activity() {
             }
             false
         }
-        minHeight = dp(52)
-        minimumHeight = dp(52)
+        minHeight = dp(48)
+        minimumHeight = dp(48)
         stateListAnimator = null
-        elevation = dp(1).toFloat()
-        setPadding(dp(14), dp(12), dp(14), dp(12))
+        elevation = 0f
+        setPadding(dp(16), dp(11), dp(16), dp(11))
         contentDescription = title
     }
 
