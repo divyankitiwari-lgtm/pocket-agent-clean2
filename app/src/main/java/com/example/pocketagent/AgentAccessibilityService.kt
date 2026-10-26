@@ -262,55 +262,57 @@ class AgentAccessibilityService : AccessibilityService() {
         val wanted = normalizeLabel(target)
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         try { candidates.addAll(root.findAccessibilityNodeInfosByText(target)) } catch (_: Exception) { }
-        // Some quiz apps expose labels as nested text nodes rather than the clickable answer card.
         fun collectMatches(node: AccessibilityNodeInfo?, depth: Int) {
             if (node == null || depth > 24 || candidates.size > 160) return
             val label = normalizeLabel(node.text ?: node.contentDescription)
-            // Exact labels first; fuzzy matches are handled only by the platform's text search.
-            // Avoid matching a short fragment inside a different button label.
-            if (label.isNotBlank() && label == wanted) {
-                if (candidates.none { it == node }) candidates.add(node)
-            }
+            if (label.isNotBlank() && label == wanted &&
+                candidates.none { it.boundsInScreen().sameBounds(node.boundsInScreen()) }) candidates.add(node)
             for (i in 0 until node.childCount) collectMatches(node.getChild(i), depth + 1)
         }
         collectMatches(root, 0)
-        // Prefer the most exact label match and the nearest clickable parent.
-        val ordered = candidates.distinctBy { normalizeLabel(it.text ?: it.contentDescription) }.sortedBy { node ->
-            val label = normalizeLabel(node.text ?: node.contentDescription)
-            if (label == wanted) 0 else 1
-        }
-        for (candidate in ordered) {
+        val screenArea = resources.displayMetrics.widthPixels.toLong() * resources.displayMetrics.heightPixels.toLong()
+        val minTarget = dp(48)
+        data class TapTarget(val node: AccessibilityNodeInfo, val bounds: android.graphics.Rect, val area: Long)
+        val clickableTargets = mutableListOf<TapTarget>()
+        val fallbackTargets = mutableListOf<android.graphics.Rect>()
+        for (candidate in candidates) {
             var current: AccessibilityNodeInfo? = candidate
             var depth = 0
-            var bestTapBounds: android.graphics.Rect? = null
-            var bestArea = 0L
-            val screenArea = resources.displayMetrics.widthPixels.toLong() * resources.displayMetrics.heightPixels.toLong()
-            while (current != null && depth++ < 7) {
+            while (current != null && depth++ < 8) {
                 val bounds = android.graphics.Rect()
                 current.getBoundsInScreen(bounds)
-                if (bounds.width() >= dp(20) && bounds.height() >= dp(20)) {
-                    val area = bounds.width().toLong() * bounds.height().toLong()
-                    // Save the largest reasonable ancestor (usually the answer card), but not
-                    // a full-screen container. This makes the gesture land near the card center.
-                    if (area < screenArea * 3 / 4 && area > bestArea) {
-                        bestArea = area
-                        bestTapBounds = android.graphics.Rect(bounds)
-                    }
-                    if (current.isClickable && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                        showTapMarker(bounds)
-                        return true
-                    }
+                val area = bounds.width().toLong() * bounds.height().toLong()
+                val visible = bounds.right > 0 && bounds.bottom > 0 &&
+                    bounds.left < resources.displayMetrics.widthPixels &&
+                    bounds.top < resources.displayMetrics.heightPixels
+                val reasonable = visible && bounds.width() >= minTarget &&
+                    bounds.height() >= minTarget && area > 0 && area < screenArea * 3 / 4
+                if (reasonable) {
+                    if (fallbackTargets.none { it == bounds }) fallbackTargets.add(android.graphics.Rect(bounds))
+                    if (current.isClickable && current.isEnabled) clickableTargets.add(TapTarget(current, android.graphics.Rect(bounds), area))
                 }
                 current = current.parent
             }
-            val tapBounds = bestTapBounds
-            if (tapBounds != null && tapCenter(tapBounds)) {
-                showTapMarker(tapBounds)
-                return true
-            }
+        }
+        // Prefer the smallest valid clickable node instead of a large clickable ancestor.
+        val bestClickable = clickableTargets.minByOrNull { it.area }
+        if (bestClickable != null && bestClickable.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            showTapMarker(bestClickable.bounds)
+            return true
+        }
+        // Apps without semantic click actions get a center gesture on the smallest valid visible target.
+        val centerTarget = fallbackTargets.minByOrNull { it.width().toLong() * it.height().toLong() }
+        if (centerTarget != null && tapCenter(centerTarget)) {
+            showTapMarker(centerTarget)
+            return true
         }
         return false
     }
+
+    private fun AccessibilityNodeInfo.boundsInScreen(): android.graphics.Rect =
+        android.graphics.Rect().also { getBoundsInScreen(it) }
+
+    private fun android.graphics.Rect.sameBounds(other: android.graphics.Rect): Boolean = this == other
 
     private fun tapCenter(bounds: android.graphics.Rect): Boolean {
         val x = bounds.centerX().toFloat()
