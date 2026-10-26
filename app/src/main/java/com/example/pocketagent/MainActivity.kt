@@ -1013,7 +1013,7 @@ Previous action result: ${lastResult.take(500)}
             var connection: HttpURLConnection? = null
             try {
                 if (mode != 0) {
-                    val localResponse = if (mode == 1) generateLocalAi(prompt) else localRulePlan(userTask, screen, "")
+                    val localResponse = localRulePlan(userTask, screen, "")
                     runOnUiThread {
                         answerView.text = localResponse
                         status.text = if (mode == 1) "Local AI response · no API used" else "Local rules response · no API used"
