@@ -106,7 +106,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "A phone-first AI agent prototype. Gemini chooses one action at a time; Android Accessibility attempts visible taps and text entry. Review each step and use Pause or Stop whenever needed."
+            text = "Give one task. Pocket Agent plans privately, launches apps, taps, types, scrolls, and checks each result. Gemini stays in the background; this screen shows actions, not chat answers."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -166,7 +166,7 @@ class MainActivity : Activity() {
 
         val taskCard = card(white)
         taskCard.addView(sectionTitle("02  ·  YOUR TASK"))
-        taskCard.addView(label("What should Gemini help with?"))
+        taskCard.addView(label("What should the agent do?"))
         task = field("Describe your task in plain English", false).apply {
             setText(prefs.getString("last_task", "").orEmpty())
             minLines = 3
@@ -183,18 +183,18 @@ class MainActivity : Activity() {
             buttonTintList = android.content.res.ColorStateList.valueOf(accent)
         }
         taskCard.addView(useScreen, margins(bottom = 12))
-        askButton = actionButton("Ask Gemini", accent, white)
+        askButton = actionButton("Ask Gemini", accent, white).apply { visibility = View.GONE }
         askButton.setOnClickListener { sendGeminiRequest() }
         taskCard.addView(askButton, margins(bottom = 8))
-        val agentButton = actionButton("▶ Start autonomous agent", Color.rgb(30, 32, 48), Color.WHITE)
+        val agentButton = actionButton("▶ Run task", Color.rgb(30, 32, 48), Color.WHITE)
         agentButton.setOnClickListener { startAutonomousAgent(agentButton) }
         taskCard.addView(agentButton, margins(bottom = 8))
         content.addView(taskCard, margins(bottom = 14))
 
         val answerCard = card(white)
-        answerCard.addView(sectionTitle("03  ·  GEMINI RESPONSE"))
+        answerCard.addView(sectionTitle("03  ·  ACTION LOG"))
         answerView = TextView(this).apply {
-            text = "Your answer will appear here. After tapping Ask Gemini, wait for the response or an error message."
+            text = "When the agent runs, this area records actions such as “Opened YouTube”, “Tapped Search”, and “Scrolled down”. Gemini text answers are hidden."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -509,6 +509,20 @@ class MainActivity : Activity() {
 
     @Volatile private var agentRunning = false
 
+    private fun actionLabel(action: String, value: String): String {
+        val label = when (action) {
+            "open_app" -> "Opening app: $value"
+            "tap_text" -> "Tapping: $value"
+            "type_text" -> "Entering text"
+            "scroll_down" -> "Scrolling down"
+            "scroll_up" -> "Scrolling up"
+            "back" -> "Pressing Back"
+            "home" -> "Going to Home"
+            else -> action.replaceFirstChar { it.uppercase() } + if (value.isBlank()) "" else ": $value"
+        }
+        return label
+    }
+
     private fun startAutonomousAgent(agentButton: Button) {
         val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val userTask = task.text.toString().trim()
@@ -521,13 +535,14 @@ class MainActivity : Activity() {
         }
         agentRunning = true
         prefs.edit().putBoolean("session_active", true).putString("current_agent_status", "● Pocket Agent · Starting").putString("last_task", userTask).putString("pending_action", "").putString("last_action_result", "").apply()
-        agentButton.text = "■ Stop autonomous agent"
-        status.text = "Agent starting · switch to the target app"
+        agentButton.text = "■ Stop agent"
+        status.text = "Agent starting · it will open the requested app and act step by step"
         logCommunication("AGENT START", userTask)
+        runOnUiThread { answerView.text = "Starting task…"; status.text = "Planning privately · no Gemini chat replies" }
         Thread {
             try {
                 var lastResult = ""
-                for (step in 1..25) {
+                for (step in 1..60) {
                     if (!agentRunning || !prefs.getBoolean("session_active", false)) break
                     var screen = prefs.getString("latest_screen_text", "").orEmpty()
                     if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
@@ -540,7 +555,7 @@ Use tap_text only for a visible UI label. Use type_text only when an editable fi
 Use scroll_down or scroll_up when the target content is not visible. Use back or home only when useful for the task.
 For done use {"action":"done","text":"completion summary","reason":"..."}; ask_user uses {"action":"ask_user","text":"what user must decide","reason":"..."}.
 User task: ${userTask}
-Step: ${step} of 25
+Step: ${step} of 60
 Visible screen text:
 ${screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
@@ -553,11 +568,11 @@ Rules: act only on visible labels. Never invent buttons. Do not enter passwords,
                     val textValue = command.optString("text", "")
                     val reason = command.optString("reason", "")
                     prefs.edit().putString("current_agent_status", "● Step " + step + " · " + action).apply()
-                    logCommunication("AGENT STEP " + step, "Screen: " + screen.take(700) + "\\nDecision: " + action + " " + textValue + "\\nReason: " + reason)
-                    runOnUiThread { answerView.text = "Step " + step + "/25\\nAction: " + action + "\\n" + textValue + "\\n\\nReason: " + reason; status.text = "Agent step " + step + " · " + action }
+                    logCommunication("AGENT STEP " + step, "Action: " + action + " " + textValue + "\\nReason: " + reason)
+                    runOnUiThread { answerView.append("\\n" + step + ". " + actionLabel(action, textValue)); status.text = "Working · step " + step + " · " + action }
                     when (action) {
-                        "done" -> { runOnUiThread { answerView.text = "Task finished\\n\\n" + textValue; status.text = "Agent completed" }; break }
-                        "ask_user" -> { runOnUiThread { answerView.text = "Agent needs your input\\n\\n" + textValue; status.text = "Waiting for user" }; break }
+                        "done" -> { runOnUiThread { answerView.append("\\n✓ Task completed"); status.text = "Agent completed" }; break }
+                        "ask_user" -> { runOnUiThread { answerView.append("\\n⏸ Needs your input: " + textValue); status.text = "Paused · user input required" }; break }
                         "open_app", "tap_text", "type_text", "scroll_down", "scroll_up", "back", "home" -> {
                             // Reset the previous result so a timeout cannot be mistaken for a successful action.
                             prefs.edit().putString("last_action_result", "")
@@ -570,7 +585,8 @@ Rules: act only on visible labels. Never invent buttons. Do not enter passwords,
                                 Thread.sleep(200)
                                 waited += 200
                             }
-                            lastResult = actionResult.ifBlank { "No action confirmation received; re-checking the screen." }
+                            lastResult = actionResult.ifBlank { "No confirmation received. Inspect the current screen and choose a different safe action if needed." }
+                            runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
                             Thread.sleep(700)
                         }
                         else -> { runOnUiThread { answerView.text = "Unsupported action: " + action; status.text = "Agent paused for safety" }; break }
@@ -579,11 +595,11 @@ Rules: act only on visible labels. Never invent buttons. Do not enter passwords,
             } catch (e: Exception) {
                 val message = "Agent error: " + (e.message ?: "unknown error")
                 logCommunication("AGENT ERROR", message)
-                runOnUiThread { answerView.text = message; status.text = "Agent error" }
+                runOnUiThread { answerView.append("\\n⚠ Agent stopped: " + (e.message ?: "request failed")); status.text = "Agent stopped · check connection or model settings" }
             } finally {
                 agentRunning = false
                 prefs.edit().putBoolean("session_active", false).putString("current_agent_status", "● Pocket Agent · Stopped").putString("pending_action", "").apply()
-                runOnUiThread { agentButton.text = "▶ Start autonomous agent" }
+                runOnUiThread { agentButton.text = "▶ Run task" }
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
         }.start()
