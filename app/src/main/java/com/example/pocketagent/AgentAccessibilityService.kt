@@ -26,6 +26,7 @@ import android.widget.TextView
 class AgentAccessibilityService : AccessibilityService() {
     private var agentTab: LinearLayout? = null
     private var agentStatus: TextView? = null
+    private var agentPauseButton: Button? = null
     private var windowManager: WindowManager? = null
     private var tapMarker: View? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -45,6 +46,7 @@ class AgentAccessibilityService : AccessibilityService() {
         }
         if (agentTab != null) {
             agentStatus?.text = prefs.getString("current_agent_status", "● Pocket Agent · Running").orEmpty()
+            agentPauseButton?.text = if (prefs.getBoolean("agent_paused", false)) "Resume" else "Pause"
             return
         }
         try {
@@ -72,11 +74,16 @@ class AgentAccessibilityService : AccessibilityService() {
                 background = pill(Color.rgb(117, 92, 255), 18)
                 setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
-                    prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
-                    removeAgentTab()
+                    val paused = prefs.getBoolean("agent_paused", false)
+                    prefs.edit().putBoolean("agent_paused", !paused)
+                        .putString("pending_action", "")
+                        .putString("current_agent_status", if (paused) "● Pocket Agent · Resuming" else "Ⅱ Pocket Agent · Paused")
+                        .apply()
+                    text = if (paused) "Pause" else "Resume"
                 }
             }
             panel.addView(pause, LinearLayout.LayoutParams(-2, dp(38)).apply { marginEnd = dp(5) })
+            agentPauseButton = pause
             val stop = Button(this).apply {
                 text = "Stop"
                 textSize = 11f
@@ -85,7 +92,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 background = pill(Color.rgb(190, 55, 72), 18)
                 setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
-                    prefs.edit().putBoolean("session_active", false)
+                    prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
                         .putString("latest_screen_text", "")
                         .putString("pending_action", "").apply()
                     removeAgentTab()
@@ -115,6 +122,7 @@ class AgentAccessibilityService : AccessibilityService() {
         try { agentTab?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         agentTab = null
         agentStatus = null
+        agentPauseButton = null
     }
 
     private val poller = object : Runnable {
@@ -145,6 +153,7 @@ class AgentAccessibilityService : AccessibilityService() {
         prefs.edit().putLong("last_accessibility_event", System.currentTimeMillis()).apply()
         if (!prefs.getBoolean("session_active", false)) return
 
+        if (prefs.getBoolean("agent_paused", false)) return
         val pending = prefs.getString("pending_action", "").orEmpty()
         if (pending.isNotBlank()) {
             // Clear first so a repeated accessibility event cannot execute the same command twice.
