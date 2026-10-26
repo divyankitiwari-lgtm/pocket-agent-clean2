@@ -11,6 +11,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.WindowManager
+import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
@@ -26,6 +27,7 @@ class AgentAccessibilityService : AccessibilityService() {
     private var agentTab: LinearLayout? = null
     private var agentStatus: TextView? = null
     private var windowManager: WindowManager? = null
+    private var tapMarker: View? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -237,15 +239,58 @@ class AgentAccessibilityService : AccessibilityService() {
         if (root == null) return false
         val candidates = root.findAccessibilityNodeInfosByText(target)
         for (candidate in candidates) {
-            if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            if (candidate.isClickable) {
+                showTapMarker(candidate)
+                if (candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            }
             var parent = candidate.parent
             var depth = 0
             while (parent != null && depth++ < 6) {
-                if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                if (parent.isClickable) {
+                    showTapMarker(parent)
+                    if (parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                }
                 parent = parent.parent
             }
         }
         return false
+    }
+
+    private fun showTapMarker(node: AccessibilityNodeInfo) {
+        try {
+            val bounds = android.graphics.Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.width() < dp(12) || bounds.height() < dp(12)) return
+            val marker = View(this).apply {
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(28, 255, 190, 40))
+                    setStroke(dp(3), Color.rgb(255, 176, 0))
+                    cornerRadius = dp(9).toFloat()
+                }
+                elevation = dp(18).toFloat()
+            }
+            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            try { tapMarker?.let { wm.removeView(it) } } catch (_: Exception) { }
+            val params = WindowManager.LayoutParams(
+                bounds.width().coerceAtLeast(dp(16)),
+                bounds.height().coerceAtLeast(dp(16)),
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = bounds.left
+                y = bounds.top
+            }
+            wm.addView(marker, params)
+            tapMarker = marker
+            handler.postDelayed({
+                try { tapMarker?.let { wm.removeView(it) } } catch (_: Exception) { }
+                tapMarker = null
+            }, 700)
+        } catch (_: Exception) { }
     }
 
     private fun findFocusedEditable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
