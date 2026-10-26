@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var askButton: Button
     private lateinit var prefs: android.content.SharedPreferences
     private lateinit var securePrefs: android.content.SharedPreferences
+    private lateinit var contentLayout: LinearLayout
 
     private val ink = Color.rgb(27, 30, 47)
     private val muted = Color.rgb(115, 119, 139)
@@ -65,6 +66,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(24))
         }
+        contentLayout = content
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
@@ -393,7 +395,7 @@ class MainActivity : Activity() {
                 setStroke(dp(1), Color.rgb(153, 132, 255))
             }
         }
-        content.addView(banner, 0, LinearLayout.LayoutParams(
+        contentLayout.addView(banner, 0, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(dp(16), dp(8), dp(16), dp(12)) })
         banner.postDelayed({
@@ -471,7 +473,7 @@ class MainActivity : Activity() {
                 dialog.dismiss()
                 status.text = "Demo profile created locally · no real account was made"
                 if (emailValue.equals("divyankitiwari@gmail.com", ignoreCase = true)) {
-                    content.post { showAdminBanner() }
+                    contentLayout.post { showAdminBanner() }
                 }
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
