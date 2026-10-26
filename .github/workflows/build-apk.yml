@@ -4,13 +4,21 @@ on:
   workflow_dispatch:
   push:
     branches: ["main"]
+  # Nightly regression build at 03:00 India Standard Time (21:30 UTC).
+  schedule:
+    - cron: "30 21 * * *"
 
 permissions:
   contents: read
 
+concurrency:
+  group: pocket-agent-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,9 +33,29 @@ jobs:
           gradle-version: "8.9"
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+      - name: Generate build report and checksum
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          sha256sum "$APK" | tee app/build/outputs/apk/debug/app-debug.apk.sha256
+          {
+            echo "## Pocket Agent Android build"
+            echo "- Commit: `$GITHUB_SHA`"
+            echo "- Trigger: `$GITHUB_EVENT_NAME`"
+            echo "- Built at (UTC): `$(date -u +'%Y-%m-%d %H:%M:%S')`"
+            echo "- APK size: `$(du -h "$APK" | cut -f1)`"
+            echo "- SHA-256:"
+            echo '  ```'
+            cat app/build/outputs/apk/debug/app-debug.apk.sha256
+            echo '  ```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: pocket-agent-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
+          retention-days: 14
