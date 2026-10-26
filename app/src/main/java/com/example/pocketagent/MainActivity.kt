@@ -727,6 +727,7 @@ class MainActivity : Activity() {
                         logCommunication("BOOTSTRAP RESULT", lastResult)
                         runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
                         Thread.sleep(1200)
+                        screen = prefs.getString("latest_screen_text", "").orEmpty()
                     }
                     val instruction = """
 You are the silent planning engine for Pocket Agent, an Android UI-control agent. You do not chat with the user. Return ONLY one JSON object and nothing else:
