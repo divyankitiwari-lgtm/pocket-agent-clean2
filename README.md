@@ -22,7 +22,7 @@ A clean Android starter for a Gemini-powered screen assistant, designed to build
 
 ## Set up
 1. Open Pocket Agent and enter your Gemini API key and model (default: `gemini-2.5-flash`).
-2. If Firebase is configured, use Google sign-in or email/password sign-in. If not, choose **Continue offline** to use local features; account sync and cloud bug reports remain unavailable.
+2. Use Google sign-in or email/password if Firebase is configured, or choose **Continue offline** whenever you prefer not to sign in. Offline mode creates no fake account; account sync and cloud bug reports require Firebase.
 3. Tap **Open Accessibility Settings** and enable Pocket Agent only if you want screen observation and automation.
 4. Tap **Start**, switch to the target app, then return and refresh the observed screen text. Enter your task and tap **Run task** to start step-by-step automation. **Pause/Resume** and **Stop** remain available.
 5. Cloud mode sends your task and, only when enabled, observed screen labels to the selected provider. Local Rules mode needs no API key. Local AI requires a compatible MediaPipe `.task` model.
