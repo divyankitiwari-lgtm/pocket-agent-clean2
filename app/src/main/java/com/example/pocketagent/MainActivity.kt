@@ -901,9 +901,17 @@ Previous action result: ${lastResult.take(500)}
 """.trimIndent()
                     val raw = when (mode) {
                         1 -> {
-                            // Prevent crashes from an unvalidated native model/runtime pair.
-                            logCommunication("LOCAL AI", "Using safe on-device rules planner until this .task model is validated.")
-                            localRulePlan(userTask, screen, lastResult)
+                            // Use the actual MediaPipe runtime for local inference; fall back to explicit
+                            // local rules only when the selected model cannot load or produce a response.
+                            try {
+                                logCommunication("LOCAL AI", "Running the imported .task model on-device.")
+                                generateLocalAi(instruction)
+                            } catch (localError: Exception) {
+                                logCommunication("LOCAL AI FALLBACK", "On-device inference failed: " +
+                                    (localError.message ?: localError.javaClass.simpleName) +
+                                    ". Falling back to local rules; no cloud request was made.")
+                                localRulePlan(userTask, screen, lastResult)
+                            }
                         }
                         2 -> localRulePlan(userTask, screen, lastResult)
                         else -> requestGeminiText(key, chosenModel, instruction)
@@ -1043,10 +1051,19 @@ Previous action result: ${lastResult.take(500)}
             var connection: HttpURLConnection? = null
             try {
                 if (mode != 0) {
-                    val localResponse = localRulePlan(userTask, screen, "")
+                    val localResponse = if (mode == 1) {
+                        try {
+                            generateLocalAi(prompt)
+                        } catch (localError: Exception) {
+                            logCommunication("LOCAL AI FALLBACK", "Model inference failed: " +
+                                (localError.message ?: localError.javaClass.simpleName))
+                            "On-device model could not run: " + (localError.message ?: "unknown model/runtime error") +
+                                "\\n\\nTry a compatible MediaPipe .task model, or switch to Local Rules mode. No cloud request was sent."
+                        }
+                    } else localRulePlan(userTask, screen, "")
                     runOnUiThread {
                         answerView.text = localResponse
-                        status.text = if (mode == 1) "Local AI response · no API used" else "Local rules response · no API used"
+                        status.text = if (mode == 1) "On-device model attempt finished · no API used" else "Local rules response · no API used"
                         saveHistory(userTask, modeSpinner.selectedItem.toString(), localResponse)
                     }
                     return@Thread
