@@ -654,10 +654,14 @@ class MainActivity : Activity() {
 
     private fun showPlanOptions() {
         if (isAdminAccount()) {
-            prefs.edit().putString("selected_plan", "Max").apply()
-            AlertDialog.Builder(this).setTitle("Admin plan · Max")
-                .setMessage("This prototype recognises the configured admin email locally. This is NOT secure authentication: anyone who types this email can impersonate the admin until verified sign-in is implemented. API limits still apply.")
-                .setPositiveButton("OK", null).show()
+            val adminPlans = arrayOf("Free · preview 60-step limit", "Premium · preview 4-hour session", "Max · preview no app-imposed step cap")
+            AlertDialog.Builder(this).setTitle("Admin · plan preview")
+                .setSingleChoiceItems(adminPlans, listOf("Free", "Premium", "Max").indexOf(currentPlan())) { dialog, which ->
+                    val selected = listOf("Free", "Premium", "Max")[which]
+                    prefs.edit().putString("selected_plan", selected).apply()
+                    status.text = "Admin preview switched to $selected · no paid entitlement changed"
+                    dialog.dismiss()
+                }.setNegativeButton("Cancel", null).show()
             return
         }
         val plans = arrayOf("Free · ₹0 · 60 steps per task", "Premium · 4-hour task sessions", "Max · no app-imposed step cap")
