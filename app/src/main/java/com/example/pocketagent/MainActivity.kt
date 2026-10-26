@@ -72,6 +72,9 @@ class MainActivity : Activity() {
         val menuButton = actionButton("☰  Menu & History", white, accent)
         menuButton.setOnClickListener { showHistoryMenu() }
         topBar.addView(menuButton, LinearLayout.LayoutParams(-2, dp(46)))
+        val logoutButton = actionButton("↪ Logout", Color.rgb(255, 235, 237), Color.rgb(180, 50, 70))
+        logoutButton.setOnClickListener { confirmLogout() }
+        topBar.addView(logoutButton, LinearLayout.LayoutParams(-2, dp(46)).apply { marginStart = dp(6) })
         val liveButton = actionButton("◉ Live Activity", Color.rgb(30, 32, 48), Color.WHITE)
         liveButton.setOnClickListener {
             val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank {
@@ -352,6 +355,29 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun confirmLogout() {
+        AlertDialog.Builder(this)
+            .setTitle("Log out of Pocket Agent?")
+            .setMessage("This ends the current local demo session and stops any running agent. Your saved API key and on-phone task history will remain on this device.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Log out") { _, _ ->
+                agentRunning = false
+                prefs.edit()
+                    .putBoolean("session_active", false)
+                    .putString("pending_action", "")
+                    .putString("current_agent_status", "● Pocket Agent · Logged out")
+                    .putBoolean("demo_account_created", false)
+                    .remove("demo_display_name")
+                    .remove("demo_email")
+                    .apply()
+                status.text = "Logged out · automation stopped"
+                answerView.text = "You are logged out. Create a demo profile to use the dashboard again."
+                screenPreview.text = "Screen observation paused while logged out."
+                showWelcomeGate()
+            }
+            .show()
+    }
+
     private fun showAdminBanner() {
         if (!isAdminAccount()) return
         val banner = TextView(this).apply {
@@ -567,7 +593,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHistoryMenu() {
-        val options = arrayOf("History", "Clear history", "Connection & privacy")
+        val options = arrayOf("History", "Clear history", "Connection & privacy", "Account & logout")
         AlertDialog.Builder(this).setTitle("Pocket Agent")
             .setItems(options) { _, which ->
                 when (which) {
@@ -580,8 +606,9 @@ class MainActivity : Activity() {
                             status.text = "History cleared"
                         }.show()
                     2 -> AlertDialog.Builder(this).setTitle("Connection & privacy")
-                        .setMessage("Your API key is not saved. Task history is stored locally on this phone. Screen labels are sent to Gemini only when included in a request. Automatic tapping and typing are not available in this build.")
+                        .setMessage("Your Gemini API key is stored on this phone using encrypted preferences when available. Task history is stored locally. Screen labels and task text may be sent to Google Gemini while the agent runs. This profile is a local demo profile, not a secure online account.")
                         .setPositiveButton("OK", null).show()
+                    3 -> confirmLogout()
                 }
             }.show()
     }
