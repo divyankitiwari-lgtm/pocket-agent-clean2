@@ -194,16 +194,33 @@ class AgentAccessibilityService : AccessibilityService() {
         if (query.isBlank()) return "Open app failed: app name was empty"
         val pm = packageManager
         val apps = pm.getInstalledApplications(0)
-        val match = apps.firstOrNull { app ->
-            val launch = pm.getLaunchIntentForPackage(app.packageName)
-            launch != null && (pm.getApplicationLabel(app).toString().equals(query, true) ||
-                pm.getApplicationLabel(app).toString().contains(query, true))
-        } ?: return "Could not find an installed app matching: $query"
-        val launch = pm.getLaunchIntentForPackage(match.packageName)
-            ?: return "No launcher activity for: $query"
+        fun normalize(value: String): String = value.lowercase()
+            .replace("&", " and ")
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
+        val wanted = normalize(query)
+        val launchable = apps.mapNotNull { app ->
+            val launch = pm.getLaunchIntentForPackage(app.packageName) ?: return@mapNotNull null
+            val label = pm.getApplicationLabel(app).toString()
+            Triple(app, launch, normalize(label))
+        }
+        // Prefer exact normalized matches, then containment, then all meaningful words.
+        val match = launchable.firstOrNull { it.third == wanted }
+            ?: launchable.firstOrNull { it.third.contains(wanted) || wanted.contains(it.third) }
+            ?: launchable.firstOrNull { candidate ->
+                val words = wanted.split(" ").filter { it.length > 2 }
+                words.isNotEmpty() && words.all { candidate.third.contains(it) }
+            }
+            ?: return "Could not find an installed app matching: $query. Check that it is installed and visible in the launcher."
+        val launch = match.second
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(launch)
-        return "Opened app: " + pm.getApplicationLabel(match)
+        return try {
+            startActivity(launch)
+            "Opened app: " + pm.getApplicationLabel(match.first)
+        } catch (e: Exception) {
+            "Open app failed: " + (e.message ?: e.javaClass.simpleName)
+        }
     }
 
     private fun scrollWindow(down: Boolean): Boolean {
