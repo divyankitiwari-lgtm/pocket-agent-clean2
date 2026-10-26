@@ -23,6 +23,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.firestore.FirebaseFirestore
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,6 +45,8 @@ class MainActivity : Activity() {
     private lateinit var prefs: android.content.SharedPreferences
     private lateinit var securePrefs: android.content.SharedPreferences
     private lateinit var contentLayout: LinearLayout
+    private var firebaseAuth: FirebaseAuth? = null
+    private var firestore: FirebaseFirestore? = null
 
     private val ink = Color.rgb(24, 28, 52)
     private val muted = Color.rgb(104, 111, 139)
@@ -51,6 +57,15 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
+        try {
+            if (FirebaseApp.initializeApp(this) != null) {
+                firebaseAuth = FirebaseAuth.getInstance()
+                firestore = FirebaseFirestore.getInstance()
+            }
+        } catch (_: Exception) {
+            firebaseAuth = null
+            firestore = null
+        }
         securePrefs = try {
             val masterKey = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
             EncryptedSharedPreferences.create(this, "pocket_agent_secrets", masterKey,
@@ -409,10 +424,11 @@ class MainActivity : Activity() {
         })
 
         setContentView(root)
-        if (!prefs.getBoolean("demo_account_created", false)) {
-            content.post { showWelcomeGate() }
-        } else if (isAdminAccount()) {
-            content.post { showAdminBanner() }
+        val signedInUser = firebaseAuth?.currentUser
+        if (signedInUser == null) content.post { showWelcomeGate() }
+        else {
+            refreshAdminClaim(signedInUser)
+            content.post { showAccountBanner(signedInUser) }
         }
     }
 
@@ -481,24 +497,17 @@ class MainActivity : Activity() {
     private fun confirmLogout() {
         AlertDialog.Builder(this)
             .setTitle("Log out of Pocket Agent?")
-            .setMessage("This ends the current local demo session and stops any running agent. Your saved API key and on-phone task history will remain on this device.")
+            .setMessage("This stops any running agent and signs out of your Firebase account. Your API key and local history remain on this phone.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Log out") { _, _ ->
                 agentRunning = false
-                prefs.edit()
-                    .putBoolean("session_active", false)
-                    .putString("pending_action", "")
-                    .putString("current_agent_status", "● Pocket Agent · Logged out")
-                    .putBoolean("demo_account_created", false)
-                    .remove("demo_display_name")
-                    .remove("demo_email")
-                    .apply()
-                status.text = "Logged out · automation stopped"
-                answerView.text = "You are logged out. Create a demo profile to use the dashboard again."
-                screenPreview.text = "Screen observation paused while logged out."
+                prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
+                firebaseAuth?.signOut()
+                status.text = "Signed out · automation stopped"
+                answerView.text = "Sign in with your account to continue."
+                screenPreview.text = "Screen observation paused while signed out."
                 showWelcomeGate()
-            }
-            .show()
+            }.show()
     }
 
     private fun showAdminBanner() {
@@ -524,10 +533,27 @@ class MainActivity : Activity() {
         ).apply { setMargins(dp(16), dp(8), dp(16), dp(12)) })
     }
 
-    private fun isAdminAccount(): Boolean {
-        val savedEmail = prefs.getString("demo_email", "").orEmpty().trim()
-        return savedEmail.equals("divyankitiwari@gmail.com", ignoreCase = true) ||
-            savedEmail.equals("aradhyadeopa0@gmail.com", ignoreCase = true)
+    private fun isAdminAccount(): Boolean =
+        prefs.getBoolean("admin_verified_by_firebase", false) && firebaseAuth?.currentUser != null
+
+    private fun refreshAdminClaim(user: FirebaseUser?) {
+        if (user == null) {
+            prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
+            return
+        }
+        user.getIdToken(false).addOnSuccessListener { token ->
+            val admin = token.claims["admin"] == true
+            prefs.edit().putBoolean("admin_verified_by_firebase", admin).apply()
+            if (admin) runOnUiThread { showAdminBanner() }
+        }.addOnFailureListener {
+            prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
+        }
+    }
+
+    private fun showAccountBanner(user: FirebaseUser) {
+        val label = user.displayName?.takeIf { it.isNotBlank() } ?: user.email ?: "Signed-in user"
+        status.text = "Signed in · $label"
+        if (isAdminAccount()) showAdminBanner()
     }
 
     private fun currentPlan(): String {
@@ -562,47 +588,99 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(4))
         }
-        val name = field("Your display name", false)
-        val email = field("Email (demo only)", false).apply {
+        val name = field("Display name (new accounts)", false)
+        val email = field("Email address", false).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         }
-        val password = field("Password (not saved)", true)
+        val password = field("Password · at least 6 characters", true)
         panel.addView(name, margins(bottom = 8))
         panel.addView(email, margins(bottom = 8))
         panel.addView(password, margins(bottom = 8))
         panel.addView(TextView(this).apply {
-            text = "DEMO SIGN-UP · Local test profile only. No real online account is created. Passwords are not stored."
+            text = if (firebaseAuth == null) "Firebase is not configured. Add app/google-services.json, enable Email/Password in Firebase Console, and create Firestore. No demo password is accepted as a real login."
+                else "Firebase Authentication manages passwords. Pocket Agent does not save passwords in local preferences."
             textSize = 12f
             setTextColor(muted)
         })
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Welcome to Pocket Agent")
-            .setMessage("Create a demo profile to explore the agent dashboard.")
-            .setView(panel)
-            .setCancelable(false)
-            .setPositiveButton("Create demo account", null)
-            .setNeutralButton("Demo payment options", null)
-            .create()
+        val dialog = AlertDialog.Builder(this).setTitle("Pocket Agent account")
+            .setMessage("Create an account or sign in securely.").setView(panel)
+            .setCancelable(false).setPositiveButton("Create account", null)
+            .setNegativeButton("Sign in", null).setNeutralButton("Setup help", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val displayName = name.text.toString().trim()
                 val emailValue = email.text.toString().trim()
-                if (displayName.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || password.text.isNullOrBlank()) {
-                    status.text = "Enter a display name, valid email, and test password"
+                val passwordValue = password.text.toString()
+                if (firebaseAuth == null || firestore == null) {
+                    status.text = "Firebase setup required"
+                    AlertDialog.Builder(this).setTitle("Firebase not connected")
+                        .setMessage("Register package com.example.pocketagent in Firebase, enable Email/Password Authentication and Firestore, then add app/google-services.json. Read FIREBASE_SECURITY_SETUP.md.")
+                        .setPositiveButton("OK", null).show()
                     return@setOnClickListener
                 }
-                prefs.edit().putBoolean("demo_account_created", true)
-                    .putString("demo_display_name", displayName)
-                    .putString("demo_email", emailValue).apply()
-                dialog.dismiss()
-                status.text = "Demo profile created locally · no real account was made"
-                if (emailValue.equals("divyankitiwari@gmail.com", ignoreCase = true) || emailValue.equals("aradhyadeopa0@gmail.com", ignoreCase = true)) {
-                    contentLayout.post { showAdminBanner() }
+                if (displayName.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || passwordValue.length < 6) {
+                    status.text = "Enter a name, valid email and password with at least 6 characters"
+                    return@setOnClickListener
                 }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                firebaseAuth!!.createUserWithEmailAndPassword(emailValue, passwordValue)
+                    .addOnSuccessListener { result ->
+                        val user = result.user
+                        if (user == null) {
+                            dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                            status.text = "Account creation returned no user"
+                            return@addOnSuccessListener
+                        }
+                        val profile = hashMapOf<String, Any>(
+                            "displayName" to displayName, "email" to emailValue,
+                            "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                        )
+                        firestore!!.collection("users").document(user.uid).set(profile)
+                            .addOnSuccessListener {
+                                user.updateProfile(com.google.firebase.auth.UserProfileChangeRequest.Builder().setDisplayName(displayName).build())
+                                dialog.dismiss()
+                                refreshAdminClaim(user)
+                                showAccountBanner(user)
+                                status.text = "Firebase account created"
+                            }.addOnFailureListener { error ->
+                                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                                status.text = "Profile save failed: " + (error.message ?: "unknown error")
+                            }
+                    }.addOnFailureListener { error ->
+                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                        status.text = "Sign-up failed: " + (error.message ?: "check connection and settings")
+                    }
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                val emailValue = email.text.toString().trim()
+                val passwordValue = password.text.toString()
+                if (firebaseAuth == null || emailValue.isBlank() || passwordValue.isBlank()) {
+                    status.text = "Firebase setup, email and password are required"
+                    return@setOnClickListener
+                }
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = false
+                firebaseAuth!!.signInWithEmailAndPassword(emailValue, passwordValue)
+                    .addOnSuccessListener { result ->
+                        val user = result.user
+                        if (user == null) {
+                            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = true
+                            status.text = "Sign-in returned no user"
+                            return@addOnSuccessListener
+                        }
+                        dialog.dismiss()
+                        refreshAdminClaim(user)
+                        showAccountBanner(user)
+                        status.text = "Signed in successfully"
+                    }.addOnFailureListener { error ->
+                        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = true
+                        status.text = "Sign-in failed: " + (error.message ?: "check email and password")
+                    }
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                dialog.dismiss()
-                showDemoPayments()
+                AlertDialog.Builder(this).setTitle("Firebase setup")
+                    .setMessage("1. Create a Firebase project. 2. Register Android package com.example.pocketagent. 3. Download google-services.json into app/. 4. Enable Email/Password Authentication. 5. Create Firestore and publish firestore.rules after testing. 6. Grant admin custom claims only from a trusted Admin SDK environment. Read FIREBASE_SECURITY_SETUP.md.")
+                    .setPositiveButton("OK", null).show()
             }
         }
         dialog.show()
