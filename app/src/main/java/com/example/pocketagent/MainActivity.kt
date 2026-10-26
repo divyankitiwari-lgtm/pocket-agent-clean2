@@ -26,7 +26,12 @@ import androidx.security.crypto.MasterKey
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -445,6 +450,43 @@ class MainActivity : Activity() {
     @Deprecated("Use document picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 7413) {
+            if (resultCode != RESULT_OK || data == null) {
+                status.text = "Google sign-in cancelled"
+                return
+            }
+            try {
+                val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
+                val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+                firebaseAuth?.signInWithCredential(credential)
+                    ?.addOnSuccessListener { result ->
+                        val user = result.user
+                        if (user == null) {
+                            status.text = "Google sign-in returned no Firebase user"
+                            return@addOnSuccessListener
+                        }
+                        refreshAdminClaim(user)
+                        showAccountBanner(user)
+                        status.text = "Signed in with Google"
+                        val profile = hashMapOf<String, Any>(
+                            "displayName" to (user.displayName ?: account.displayName ?: "Pocket Agent user"),
+                            "email" to (user.email ?: account.email.orEmpty()),
+                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                        )
+                        firestore?.collection("users")?.document(user.uid)
+                            ?.set(profile, SetOptions.merge())
+                            ?.addOnFailureListener { error ->
+                                status.text = "Google sign-in succeeded; profile sync failed: " + (error.message ?: "check Firestore rules")
+                            }
+                    }
+                    ?.addOnFailureListener { error ->
+                        status.text = "Firebase Google sign-in failed: " + (error.message ?: "check provider setup")
+                    }
+            } catch (error: Exception) {
+                status.text = "Google sign-in failed: " + (error.message ?: "check Firebase OAuth setup")
+            }
+            return
+        }
         if (requestCode != 7412 || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         status.text = "Importing local model…"
@@ -689,6 +731,29 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         }
         val password = field("Password · at least 6 characters", true)
+        val googleSignInButton = actionButton("Continue with Google", Color.WHITE, ink).apply {
+            setOnClickListener {
+                if (firebaseAuth == null || firestore == null) {
+                    status.text = "Google sign-in needs the owner's Firebase configuration"
+                } else {
+                    val clientIdResource = resources.getIdentifier("default_web_client_id", "string", packageName)
+                    if (clientIdResource == 0) {
+                        status.text = "Add a Web OAuth client in Firebase Console, then rebuild with google-services.json"
+                    } else {
+                        try {
+                            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                .requestIdToken(getString(clientIdResource))
+                                .requestEmail()
+                                .build()
+                            startActivityForResult(GoogleSignIn.getClient(this@MainActivity, options).signInIntent, 7413)
+                        } catch (error: Exception) {
+                            status.text = "Could not start Google sign-in: " + (error.message ?: "unknown error")
+                        }
+                    }
+                }
+            }
+        }
+        panel.addView(googleSignInButton, margins(bottom = 10))
         panel.addView(name, margins(bottom = 8))
         panel.addView(email, margins(bottom = 8))
         panel.addView(password, margins(bottom = 8))
