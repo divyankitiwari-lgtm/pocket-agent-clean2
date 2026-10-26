@@ -696,6 +696,38 @@ class MainActivity : Activity() {
                     if (!agentRunning || !prefs.getBoolean("session_active", false)) break
                     var screen = prefs.getString("latest_screen_text", "").orEmpty()
                     if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
+                    // Deterministic launch bootstrap: don't rely on Gemini to discover that it must leave Pocket Agent.
+                    // This prevents an empty/stale screen snapshot from producing idle or unrelated actions.
+                    val taskNamesQuizAndEarn = userTask.contains("Quiz and Earn", ignoreCase = true)
+                    val screenLooksLikeAgent = screen.isBlank() ||
+                        (screen.contains("POCKET AGENT", ignoreCase = true) &&
+                         !screen.contains("Mega Offer", ignoreCase = true) &&
+                         !screen.contains("Quiz and Earn", ignoreCase = true))
+                    val alreadyTriedLaunch = lastResult.contains("Opened app: Quiz and Earn", ignoreCase = true) ||
+                        lastResult.contains("Could not find an installed app matching", ignoreCase = true) ||
+                        lastResult.contains("Open app failed", ignoreCase = true) ||
+                        lastResult.contains("No launcher activity", ignoreCase = true)
+                    if (taskNamesQuizAndEarn && screenLooksLikeAgent && !alreadyTriedLaunch) {
+                        val bootstrapAction = JSONObject().put("action", "open_app").put("text", "Quiz and Earn").toString()
+                        prefs.edit().putString("last_action_result", "").putString("pending_action", bootstrapAction).apply()
+                        logCommunication("BOOTSTRAP", "Launching Quiz and Earn before asking Gemini to plan screen actions.")
+                        runOnUiThread {
+                            answerView.append("\\n" + step + ". Opening Quiz and Earn")
+                            status.text = "Opening Quiz and Earn…"
+                        }
+                        var waitedForLaunch = 0
+                        var launchResult = ""
+                        while (agentRunning && prefs.getBoolean("session_active", false) && waitedForLaunch < 8000) {
+                            launchResult = prefs.getString("last_action_result", "").orEmpty()
+                            if (launchResult.isNotBlank()) break
+                            Thread.sleep(200)
+                            waitedForLaunch += 200
+                        }
+                        lastResult = launchResult.ifBlank { "No confirmation received from Accessibility Service while opening Quiz and Earn." }
+                        logCommunication("BOOTSTRAP RESULT", lastResult)
+                        runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
+                        Thread.sleep(1200)
+                    }
                     val instruction = """
 You are the silent planning engine for Pocket Agent, an Android UI-control agent. You do not chat with the user. Return ONLY one JSON object and nothing else:
 {"action":"tap_text","text":"exact visible label","reason":"short internal reason"}
