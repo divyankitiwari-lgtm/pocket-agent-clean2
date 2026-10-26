@@ -273,17 +273,11 @@ class MainActivity : Activity() {
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
-                "Gemini 3.8 Flash · recommended — gemini-3.8-flash",
-                "Gemini 3.6 Flash — gemini-3.6-flash",
-                "Gemini 3.5 Flash-Lite — gemini-3.5-flash-lite",
-                "Gemini 3.1 Flash-Lite — gemini-3.1-flash-lite",
-                "Gemini 3 Flash Preview — gemini-3-flash-preview",
-                "Gemini 3.1 Pro Preview — gemini-3.1-pro-preview",
-                "Gemini 2.5 Flash — gemini-2.5-flash",
-                "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
+                "Gemini 2.5 Flash · recommended — gemini-2.5-flash",
+                "Gemini 2.5 Flash-Lite · lightweight — gemini-2.5-flash-lite",
                 "Gemini 2.5 Pro — gemini-2.5-pro",
-                "Gemma 4 31B IT — gemma-4-31b-it",
-                "Gemma 4 26B MoE IT — gemma-4-26b-a4b-it",
+                "Gemini 2.0 Flash — gemini-2.0-flash",
+                "Gemini 2.0 Flash-Lite — gemini-2.0-flash-lite",
                 "OpenRouter Free Router · backup provider — openrouter/free"
             )
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modelNames).also {
