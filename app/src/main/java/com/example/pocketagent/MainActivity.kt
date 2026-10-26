@@ -755,6 +755,16 @@ class MainActivity : Activity() {
             }
         }
         panel.addView(googleSignInButton, margins(bottom = 10))
+        val setupHelpButton = actionButton("Firebase setup help", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
+            minHeight = dp(44)
+            minimumHeight = dp(44)
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity).setTitle("Firebase setup")
+                    .setMessage("1. Register Android package com.example.pocketagent in Firebase. 2. Add the generated google-services.json privately. 3. Enable Email/Password and Google sign-in. 4. Configure the Google Web OAuth client and signing-certificate SHA-1. 5. Create Firestore and publish tested firestore.rules. Read FIREBASE_SECURITY_SETUP.md.")
+                    .setPositiveButton("OK", null).show()
+            }
+        }
+        panel.addView(setupHelpButton, margins(bottom = 10))
         panel.addView(name, margins(bottom = 8))
         panel.addView(email, margins(bottom = 8))
         panel.addView(password, margins(bottom = 8))
@@ -786,13 +796,12 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(muted)
         })
-        val firebaseReady = firebaseAuth != null && firestore != null
         val dialog = AlertDialog.Builder(this).setTitle("Welcome to Pocket Agent")
-            .setMessage("Your account is protected by Firebase Authentication. Sign in or create an account to sync your profile and use admin features.")
+            .setMessage("Sign in with Google or email, or create an account. You can continue offline without a demo account.")
             .setView(panel)
             .setCancelable(false).setPositiveButton("Create account", null)
             .setNegativeButton("Sign in", null)
-            .setNeutralButton(if (firebaseReady) "Setup help" else "Continue offline", null).create()
+            .setNeutralButton("Continue offline", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val displayName = name.text.toString().trim()
@@ -868,15 +877,11 @@ class MainActivity : Activity() {
                     }
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                if (firebaseAuth == null || firestore == null) {
-                    dialog.dismiss()
-                    status.text = "Offline mode · local rules and device automation remain available; cloud accounts and sync need Firebase setup."
-                    logCommunication("ACCOUNT", "Continued in offline mode because Firebase configuration is unavailable.")
-                } else {
-                    AlertDialog.Builder(this).setTitle("Firebase setup")
-                        .setMessage("1. Create a Firebase project. 2. Register Android package com.example.pocketagent. 3. Download google-services.json into app/. 4. Enable Email/Password Authentication. 5. Create Firestore and publish firestore.rules after testing. 6. Grant admin custom claims only from a trusted Admin SDK environment. Read FIREBASE_SECURITY_SETUP.md.")
-                        .setPositiveButton("OK", null).show()
-                }
+                dialog.dismiss()
+                status.text = if (firebaseAuth == null || firestore == null)
+                    "Offline mode · local rules and device automation remain available; cloud accounts and sync need Firebase setup."
+                else "Offline mode selected · no account is signed in and cloud sync is not active."
+                logCommunication("ACCOUNT", "Continued without signing in; no demo account was created.")
             }
         }
         dialog.show()
