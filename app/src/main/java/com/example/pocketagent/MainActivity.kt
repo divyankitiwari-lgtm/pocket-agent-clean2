@@ -1234,35 +1234,7 @@ Previous action result: ${lastResult.take(500)}
                     }
                     return@Thread
                 }
-                val safeModel = java.net.URLEncoder.encode(chosenModel, "UTF-8")
-                connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$safeModel:generateContent?key=$key")
-                    .openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 20000
-                    readTimeout = 90000
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                }
-                val body = JSONObject()
-                    .put("contents", JSONArray().put(JSONObject()
-                        .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                    .put("generationConfig", JSONObject().put("temperature", 0.3).put("maxOutputTokens", 700))
-
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream.bufferedReader().use { it.readText() }
-                if (code !in 200..299) {
-                    val message = try {
-                        JSONObject(response).optJSONObject("error")?.optString("message")
-                    } catch (_: Exception) { null }
-                    throw IllegalStateException("Gemini HTTP $code: " + (message ?: response.take(500)))
-                }
-                val json = JSONObject(response)
-                val answer = json.optJSONArray("candidates")
-                    ?.optJSONObject(0)?.optJSONObject("content")
-                    ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
-                if (answer.isBlank()) throw IllegalStateException("Gemini returned no text. Check the model name and API key.")
+                val answer = requestGeminiText(key, chosenModel, prompt)
                 saveHistory(userTask, chosenModel, answer)
                 runOnUiThread {
                     answerView.text = answer
