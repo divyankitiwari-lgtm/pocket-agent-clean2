@@ -394,7 +394,8 @@ class MainActivity : Activity() {
         val pause = actionButton("Pause", Color.rgb(238, 235, 255), accent)
         pause.setOnClickListener {
             if (agentRunning) {
-                prefs.edit().putBoolean("agent_paused", true).putString("current_agent_status", "Ⅱ Pocket Agent · Paused").apply()
+                prefs.edit().putBoolean("agent_paused", true).putString("pending_action", "")
+                    .putString("current_agent_status", "Ⅱ Pocket Agent · Paused").apply()
                 status.text = "Agent paused · tap Start to resume"
             } else {
                 prefs.edit().putBoolean("session_active", false).apply()
@@ -550,8 +551,8 @@ class MainActivity : Activity() {
     }
 
     private fun showBugReportForm() {
-        if (!isAdminAccount() || firebaseAuth?.currentUser == null || firestore == null) {
-            status.text = "Verified Firebase admin access required"; return
+        if (firebaseAuth?.currentUser == null || firestore == null) {
+            status.text = "Sign in with Firebase to submit a cloud bug report"; return
         }
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(4)) }
         val titleField = field("Short bug title", false)
@@ -571,7 +572,7 @@ class MainActivity : Activity() {
             text = "Never include passwords, API keys, OTPs, payment data, or private screen text."
             textSize = 12f; setTextColor(Color.rgb(160, 60, 55))
         })
-        val dialog = AlertDialog.Builder(this).setTitle("Admin bug report").setView(form)
+        val dialog = AlertDialog.Builder(this).setTitle("Report a bug").setView(form)
             .setNegativeButton("Cancel", null).setPositiveButton("Submit report", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -756,16 +757,19 @@ class MainActivity : Activity() {
                             "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
                             "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
                         )
+                        dialog.dismiss()
+                        refreshAdminClaim(user)
+                        showAccountBanner(user)
+                        status.text = "Account created · sending verification email"
+                        user.updateProfile(com.google.firebase.auth.UserProfileChangeRequest.Builder().setDisplayName(displayName).build())
+                        user.sendEmailVerification().addOnSuccessListener {
+                            status.text = "Account created · verification email sent to " + emailValue
+                        }.addOnFailureListener { error ->
+                            status.text = "Account created, but verification email could not be sent: " + (error.message ?: "unknown error")
+                        }
                         firestore!!.collection("users").document(user.uid).set(profile)
-                            .addOnSuccessListener {
-                                user.updateProfile(com.google.firebase.auth.UserProfileChangeRequest.Builder().setDisplayName(displayName).build())
-                                dialog.dismiss()
-                                refreshAdminClaim(user)
-                                showAccountBanner(user)
-                                status.text = "Firebase account created"
-                            }.addOnFailureListener { error ->
-                                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                                status.text = "Profile save failed: " + (error.message ?: "unknown error")
+                            .addOnFailureListener { error ->
+                                status.text = "Account created, but profile sync failed: " + (error.message ?: "check Firestore rules")
                             }
                     }.addOnFailureListener { error ->
                         dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
@@ -948,7 +952,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHistoryMenu() {
-        val options = arrayOf("History", "Clear history", "Connection & privacy", "Account & logout")
+        val options = arrayOf("History", "Clear history", "Connection & privacy", "Report a bug", "Account & logout")
         AlertDialog.Builder(this).setTitle("Pocket Agent")
             .setItems(options) { _, which ->
                 when (which) {
@@ -961,9 +965,10 @@ class MainActivity : Activity() {
                             status.text = "History cleared"
                         }.show()
                     2 -> AlertDialog.Builder(this).setTitle("Connection & privacy")
-                        .setMessage("Your Gemini API key is stored on this phone using encrypted preferences when available. Task history is stored locally. Screen labels and task text may be sent to Google Gemini while the agent runs. This profile is a local demo profile, not a secure online account.")
+                        .setMessage("Provider API keys and task history are stored on this phone using encrypted preferences when available. In Cloud mode, your task and optionally observed screen labels are sent to the selected AI provider. Firebase account sync and cloud bug reports require the owner to configure Firebase. Offline mode does not create a fake account.")
                         .setPositiveButton("OK", null).show()
-                    3 -> confirmLogout()
+                    3 -> showBugReportForm()
+                    4 -> confirmLogout()
                 }
             }.show()
     }
