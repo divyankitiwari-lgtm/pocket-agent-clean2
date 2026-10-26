@@ -7,3 +7,6 @@ build/
 app/build/
 *.apk
 *.aab
+
+# Firebase Android client config is supplied privately to CI or locally.
+app/google-services.json
