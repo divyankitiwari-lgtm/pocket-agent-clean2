@@ -347,7 +347,32 @@ class MainActivity : Activity() {
         setContentView(root)
         if (!prefs.getBoolean("demo_account_created", false)) {
             content.post { showWelcomeGate() }
+        } else if (isAdminAccount()) {
+            content.post { showAdminBanner() }
         }
+    }
+
+    private fun showAdminBanner() {
+        if (!isAdminAccount()) return
+        val banner = TextView(this).apply {
+            text = "YOU ARE ADMIN · MAX PLAN ACTIVE"
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = android.view.Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(39, 35, 76))
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Color.rgb(153, 132, 255))
+            }
+        }
+        content.addView(banner, 0, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(dp(16), dp(8), dp(16), dp(12)) })
+        banner.postDelayed({
+            (banner.parent as? android.view.ViewGroup)?.removeView(banner)
+        }, 10_000L)
     }
 
     private fun isAdminAccount(): Boolean =
@@ -419,6 +444,9 @@ class MainActivity : Activity() {
                     .putString("demo_email", emailValue).apply()
                 dialog.dismiss()
                 status.text = "Demo profile created locally · no real account was made"
+                if (emailValue.equals("divyankitiwari@gmail.com", ignoreCase = true)) {
+                    content.post { showAdminBanner() }
+                }
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 dialog.dismiss()
