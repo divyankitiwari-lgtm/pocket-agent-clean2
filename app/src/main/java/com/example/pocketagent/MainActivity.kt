@@ -463,7 +463,7 @@ class MainActivity : Activity() {
         }
         val nodes = screen.lines().map { it.trim() }.filter { it.length in 2..90 }.distinct()
         val keywords = when {
-            taskLower.contains("mega offer") -> listOf("mega offer", "offer", "continue", "claim", "start")
+            taskLower.contains("mega offer") -> listOf("mega offer", "mega offers")
             taskLower.contains("claim") || taskLower.contains("reward") -> listOf("claim", "collect", "reward", "continue", "done")
             taskLower.contains("quiz") -> listOf("quiz", "play", "start", "continue", "next")
             taskLower.contains("search") -> listOf("search", "next", "continue")
