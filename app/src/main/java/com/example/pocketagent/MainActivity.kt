@@ -739,7 +739,8 @@ If the target screen is already open and the requested action is complete, retur
 Use type_text only when a text field is visibly focused and only for ordinary task text, never passwords, API keys, OTPs, payment details, or private information. Do not make purchases, accept subscriptions, send messages, delete content, or confirm sensitive actions. Never claim success unless the action result or next screen confirms it. Never output a normal conversational answer; the user-facing UI should show action steps only.
 For done use {"action":"done","text":"short completion status","reason":"confirmed by screen"}. For ask_user use {"action":"ask_user","text":"specific screen or choice needed","reason":"why progress is paused"}.
 User task: ${userTask}
-Step: ${step} of 60
+Current plan: ${currentPlan()}. Step number: ${step}.
+Plan rules: Free has a 60-step app limit; Premium has a 4-hour session limit; Max has NO app-imposed step-count limit. For Max, continue beyond step 60 when the task is still in progress. Do not stop just because the step number is high. Stop only when the task is confirmed complete, the user needs to decide something, a safety pause is required, or a real technical/API error prevents continuing.
 Visible screen text:
 ${screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
