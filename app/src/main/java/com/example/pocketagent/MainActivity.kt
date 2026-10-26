@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var model: Spinner
     private lateinit var apiKey: EditText
+    private lateinit var openRouterKey: EditText
     private lateinit var task: EditText
     private lateinit var screenPreview: TextView
     private lateinit var answerView: TextView
@@ -197,6 +198,24 @@ class MainActivity : Activity() {
             }
         }
         setup.addView(saveKeyButton, margins(bottom = 10))
+        setup.addView(label("Optional backup provider · OpenRouter"))
+        openRouterKey = field("OpenRouter API key (optional)", true).apply {
+            setText(securePrefs.getString("openrouter_api_key", "").orEmpty())
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) securePrefs.edit().putString("openrouter_api_key", text.toString().trim()).apply()
+            }
+        }
+        setup.addView(openRouterKey, margins(bottom = 6))
+        val saveOpenRouterKeyButton = actionButton("Save OpenRouter key", Color.rgb(238, 235, 255), accent)
+        saveOpenRouterKeyButton.setOnClickListener {
+            val value = openRouterKey.text.toString().trim()
+            if (value.isBlank()) status.text = "Paste an OpenRouter key first"
+            else {
+                securePrefs.edit().putString("openrouter_api_key", value).apply()
+                status.text = "OpenRouter key saved on this phone"
+            }
+        }
+        setup.addView(saveOpenRouterKeyButton, margins(bottom = 10))
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
@@ -210,7 +229,8 @@ class MainActivity : Activity() {
                 "Gemini 2.5 Flash-Lite — gemini-2.5-flash-lite",
                 "Gemini 2.5 Pro — gemini-2.5-pro",
                 "Gemma 4 31B IT — gemma-4-31b-it",
-                "Gemma 4 26B MoE IT — gemma-4-26b-a4b-it"
+                "Gemma 4 26B MoE IT — gemma-4-26b-a4b-it",
+                "OpenRouter Free Router · backup provider — openrouter/free"
             )
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modelNames).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -670,10 +690,12 @@ class MainActivity : Activity() {
     }
 
     private fun startAutonomousAgent(agentButton: Button) {
-        val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
-        val userTask = task.text.toString().trim()
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
-        if (key.isBlank() || userTask.isBlank()) { status.text = if (key.isBlank()) "Add your Gemini API key first" else "Describe the task first"; return }
+        val isOpenRouter = chosenModel.startsWith("openrouter/")
+        val key = if (isOpenRouter) openRouterKey.text.toString().trim().ifBlank { securePrefs.getString("openrouter_api_key", "").orEmpty() }
+            else apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
+        val userTask = task.text.toString().trim()
+        if (key.isBlank() || userTask.isBlank()) { status.text = if (key.isBlank()) "Add the API key for the selected provider first" else "Describe the task first"; return }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
@@ -798,33 +820,51 @@ Previous action result: ${lastResult.take(500)}
     private fun requestGeminiText(key: String, chosenModel: String, prompt: String): String {
         var connection: HttpURLConnection? = null
         try {
-            val safeModel = java.net.URLEncoder.encode(chosenModel, "UTF-8")
-            connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/" + safeModel + ":generateContent?key=" + key).openConnection() as HttpURLConnection).apply {
+            val isOpenRouter = chosenModel.startsWith("openrouter/")
+            val endpoint = if (isOpenRouter) "https://openrouter.ai/api/v1/chat/completions"
+                else "https://generativelanguage.googleapis.com/v1beta/models/" +
+                    java.net.URLEncoder.encode(chosenModel, "UTF-8") + ":generateContent?key=" + key
+            connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"; connectTimeout = 20000; readTimeout = 60000; doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                if (isOpenRouter) setRequestProperty("Authorization", "Bearer " + key)
             }
-            val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 500))
+            val body = if (isOpenRouter) {
+                JSONObject().put("model", chosenModel).put("messages", JSONArray()
+                    .put(JSONObject().put("role", "user").put("content", prompt)))
+                    .put("temperature", 0.1).put("max_tokens", 500)
+            } else {
+                JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                    .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 500))
+            }
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream.bufferedReader().use { it.readText() }
             if (code !in 200..299) {
-                val message = try { JSONObject(response).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
-                throw IllegalStateException("Gemini HTTP " + code + ": " + (message ?: response.take(400)))
+                val message = try {
+                    if (isOpenRouter) JSONObject(response).optJSONObject("error")?.optString("message")
+                    else JSONObject(response).optJSONObject("error")?.optString("message")
+                } catch (_: Exception) { null }
+                throw IllegalStateException((if (isOpenRouter) "OpenRouter HTTP " else "Gemini HTTP ") + code + ": " + (message ?: response.take(400)))
             }
-            return JSONObject(response).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
-                .ifBlank { throw IllegalStateException("Gemini returned an empty response.") }
+            val answer = if (isOpenRouter) JSONObject(response).optJSONArray("choices")?.optJSONObject(0)
+                ?.optJSONObject("message")?.optString("content").orEmpty()
+            else JSONObject(response).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
+                ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
+            return answer.ifBlank { throw IllegalStateException("The selected provider returned an empty response.") }
         } finally { connection?.disconnect() }
     }
 
     private fun sendGeminiRequest() {
-        val key = apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
+        val isOpenRouter = chosenModel.startsWith("openrouter/")
+        val key = if (isOpenRouter) openRouterKey.text.toString().trim().ifBlank { securePrefs.getString("openrouter_api_key", "").orEmpty() }
+            else apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val userTask = task.text.toString().trim()
         if (key.isEmpty()) {
             status.text = "Missing API key"
-            answerView.text = "Paste your Gemini API key in the Connection section first. You can save it on this phone using the secure-save button."
+            answerView.text = if (isOpenRouter) "Paste an OpenRouter API key in the Connection section and save it." else "Paste your Gemini API key in the Connection section first. You can save it on this phone using the secure-save button."
             return
         }
         if (userTask.isEmpty()) {
