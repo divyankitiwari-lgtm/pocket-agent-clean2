@@ -554,6 +554,7 @@ class MainActivity : Activity() {
                 prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
                     .putBoolean("admin_verified_by_firebase", false).putString("pending_action", "").apply()
                 firebaseAuth?.signOut()
+                contentLayout.findViewWithTag<View>("pocket_agent_admin_panel")?.let { contentLayout.removeView(it) }
                 status.text = "Signed out · automation stopped"
                 answerView.text = "Sign in with your account to continue."
                 screenPreview.text = "Screen observation paused while signed out."
