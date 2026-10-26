@@ -511,26 +511,116 @@ class MainActivity : Activity() {
     }
 
     private fun showAdminBanner() {
-        if (!isAdminAccount()) return
-        // Keep one persistent banner so the admin status is not missed after 10 seconds.
-        contentLayout.findViewWithTag<View>("pocket_agent_admin_banner")?.let { return }
-        val banner = TextView(this).apply {
-            tag = "pocket_agent_admin_banner"
-            text = "✓ ADMIN ACCESS ACTIVE · MAX PLAN"
+        if (!isAdminAccount() || contentLayout.findViewWithTag<View>("pocket_agent_admin_panel") != null) return
+        val panel = card(Color.WHITE).apply { tag = "pocket_agent_admin_panel" }
+        panel.addView(TextView(this).apply {
+            text = "✦ ADMIN CONSOLE · VERIFIED ROLE"
             textSize = 14f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = android.view.Gravity.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setPadding(dp(14), dp(13), dp(14), dp(13))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(39, 35, 76))
-                cornerRadius = dp(16).toFloat()
-                setStroke(dp(1), Color.rgb(153, 132, 255))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(74, 47, 180), Color.rgb(45, 122, 220))).apply { cornerRadius = dp(16).toFloat() }
+        }, margins(bottom = 8))
+        panel.addView(TextView(this).apply {
+            text = "Plan controls are test previews only; they do not grant paid entitlements."
+            textSize = 12f; setTextColor(muted)
+        }, margins(bottom = 8))
+        panel.addView(actionButton("Preview Free / Premium / Max", Color.rgb(238, 235, 255), accent).apply {
+            setOnClickListener { showPlanOptions() }
+        }, margins(bottom = 8))
+        panel.addView(actionButton("Report a bug", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
+            setOnClickListener { showBugReportForm() }
+        }, margins(bottom = 8))
+        panel.addView(actionButton("Review bug reports", Color.rgb(235, 250, 240), Color.rgb(20, 110, 65)).apply {
+            setOnClickListener { showAdminBugInbox() }
+        })
+        contentLayout.addView(panel, 0, LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(dp(16), dp(8), dp(16), dp(12))
+        })
+    }
+
+    private fun showBugReportForm() {
+        if (!isAdminAccount() || firebaseAuth?.currentUser == null || firestore == null) {
+            status.text = "Verified Firebase admin access required"; return
+        }
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(4)) }
+        val titleField = field("Short bug title", false)
+        val categoryField = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item,
+                listOf("UI / layout", "Accessibility / tapping", "AI connection", "Login / security", "Other")).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
-        contentLayout.addView(banner, 0, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(dp(16), dp(8), dp(16), dp(12)) })
+        val stepsField = field("Steps to reproduce", false).apply { minLines = 3; gravity = Gravity.TOP }
+        val expectedField = field("Expected behaviour", false)
+        val actualField = field("Actual behaviour", false)
+        form.addView(titleField, margins(bottom = 8)); form.addView(categoryField, margins(bottom = 8))
+        form.addView(stepsField, margins(bottom = 8)); form.addView(expectedField, margins(bottom = 8))
+        form.addView(actualField, margins(bottom = 8))
+        form.addView(TextView(this).apply {
+            text = "Never include passwords, API keys, OTPs, payment data, or private screen text."
+            textSize = 12f; setTextColor(Color.rgb(160, 60, 55))
+        })
+        val dialog = AlertDialog.Builder(this).setTitle("Admin bug report").setView(form)
+            .setNegativeButton("Cancel", null).setPositiveButton("Submit report", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val titleValue = titleField.text.toString().trim()
+                val steps = stepsField.text.toString().trim()
+                if (titleValue.isBlank() || steps.isBlank()) { status.text = "Add a title and reproduction steps"; return@setOnClickListener }
+                val user = firebaseAuth?.currentUser ?: return@setOnClickListener
+                val data = hashMapOf<String, Any>(
+                    "uid" to user.uid, "title" to titleValue.take(160),
+                    "category" to categoryField.selectedItem.toString(), "steps" to steps.take(4000),
+                    "expected" to expectedField.text.toString().trim().take(2000),
+                    "actual" to actualField.text.toString().trim().take(2000),
+                    "appVersion" to "1.0.2",
+                    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(), "status" to "new"
+                )
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                firestore!!.collection("bugReports").add(data).addOnSuccessListener { ref ->
+                    dialog.dismiss()
+                    status.text = "Bug report submitted · " + ref.id
+                    logCommunication("ADMIN BUG REPORT", "Report ID " + ref.id + " · " + titleValue)
+                    AlertDialog.Builder(this).setTitle("Report submitted")
+                        .setMessage("Reference: " + ref.id + "\\nSaved to Firebase. This does not automatically notify ChatGPT or fix the issue in the background.")
+                        .setPositiveButton("OK", null).show()
+                }.addOnFailureListener { error ->
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                    status.text = "Report failed: " + (error.message ?: "check Firestore rules")
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showAdminBugInbox() {
+        if (!isAdminAccount() || firestore == null) { status.text = "Verified Firebase admin access required"; return }
+        status.text = "Loading bug reports…"
+        firestore!!.collection("bugReports").limit(50).get().addOnSuccessListener { snapshot ->
+            val docs = snapshot.documents.sortedByDescending { it.getTimestamp("createdAt")?.seconds ?: 0L }
+            if (docs.isEmpty()) {
+                AlertDialog.Builder(this).setTitle("Bug reports").setMessage("No reports found.")
+                    .setPositiveButton("OK", null).show(); return@addOnSuccessListener
+            }
+            val labels = docs.map { "[" + it.getString("status").orEmpty() + "] " +
+                it.getString("title").orEmpty() + "\\n" + it.getString("category").orEmpty() + " · " + it.id.take(10) }.toTypedArray()
+            AlertDialog.Builder(this).setTitle("Admin bug inbox · newest 50").setItems(labels) { _, index ->
+                val doc = docs[index]
+                val details = "Reference: " + doc.id + "\\nStatus: " + doc.getString("status").orEmpty() +
+                    "\\nCategory: " + doc.getString("category").orEmpty() + "\\n\\nSteps: " + doc.getString("steps").orEmpty() +
+                    "\\n\\nExpected: " + doc.getString("expected").orEmpty() + "\\n\\nActual: " + doc.getString("actual").orEmpty()
+                val states = arrayOf("new", "investigating", "fixed")
+                AlertDialog.Builder(this).setTitle(doc.getString("title") ?: "Bug report").setMessage(details)
+                    .setItems(states) { _, which ->
+                        doc.reference.update("status", states[which])
+                            .addOnSuccessListener { status.text = "Report status updated: " + states[which] }
+                            .addOnFailureListener { err -> status.text = "Update failed: " + (err.message ?: "unknown error") }
+                    }.setPositiveButton("Close", null).show()
+            }.setPositiveButton("Close", null).show()
+        }.addOnFailureListener { error -> status.text = "Could not load reports: " + (error.message ?: "check admin claims and rules") }
     }
 
     private fun isAdminAccount(): Boolean =
