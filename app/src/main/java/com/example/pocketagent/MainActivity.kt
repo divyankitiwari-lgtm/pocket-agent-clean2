@@ -952,7 +952,13 @@ class MainActivity : Activity() {
         setTextColor(ink)
         setHintTextColor(muted)
         setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = rounded(Color.rgb(247, 247, 252), 16)
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.argb(176, 255, 255, 255), Color.argb(138, 232, 239, 255))
+        ).apply {
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), Color.argb(190, 255, 255, 255))
+        }
         if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         else inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
     }
@@ -1000,9 +1006,15 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::screenPreview.isInitialized) refreshScreenText()
-        if (::status.isInitialized) status.text =
-            if (prefs.getBoolean("accessibility_connected", false)) "Accessibility service connected"
-            else "Accessibility service not connected"
+        if (::status.isInitialized) {
+            status.text = when {
+                agentRunning && prefs.getBoolean("agent_paused", false) -> "Agent paused · tap Start to resume"
+                agentRunning -> "Agent running · check the live action log"
+                prefs.getBoolean("session_active", false) -> "Screen observation active"
+                prefs.getBoolean("accessibility_connected", false) -> "Accessibility service connected"
+                else -> "Ready · choose an AI mode and task"
+            }
+        }
     }
 
     private fun refreshScreenText() {
@@ -1099,6 +1111,7 @@ class MainActivity : Activity() {
         val key = if (isOpenRouter) openRouterKey.text.toString().trim().ifBlank { securePrefs.getString("openrouter_api_key", "").orEmpty() }
             else apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val userTask = task.text.toString().trim()
+        val shareScreenText = useScreen.isChecked
         if (userTask.isBlank()) { status.text = "Describe your task first"; return }
         if (mode == 0 && key.isBlank()) { status.text = "Add an API key for cloud mode, or choose a local mode"; return }
         if (mode == 1 && !localModelFile().exists()) { status.text = "Import a compatible .task local model first"; return }
@@ -1175,7 +1188,7 @@ User task: ${userTask}
 Current plan: ${currentPlan()}. Step number: ${step}.
 Plan rules: Free has a 60-step app limit; Premium has a 4-hour session limit; Max has NO app-imposed step-count limit. For Max, continue beyond step 60 when the task is still in progress. Do not stop just because the step number is high. Stop only when the task is confirmed complete, the user needs to decide something, a safety pause is required, or a real technical/API error prevents continuing.
 Visible screen text:
-${screen.take(9000)}
+${if (mode == 0 && !shareScreenText) "[OMITTED: screen-text sharing is disabled. Do not guess visible controls; ask the user to enable screen sharing or choose a local mode.]" else screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
 """.trimIndent()
                     val raw = when (mode) {
