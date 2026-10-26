@@ -377,6 +377,69 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun localModelFile(): File = File(filesDir, "pocket-agent-local-model.task")
+
+    @Deprecated("Use document picker")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 7412 || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        status.text = "Importing local model…"
+        Thread {
+            try {
+                contentResolver.openInputStream(uri).use { input ->
+                    if (input == null) throw IllegalStateException("Could not read selected model file.")
+                    localModelFile().outputStream().use { output -> input.copyTo(output) }
+                }
+                runOnUiThread {
+                    status.text = "Local model imported · " + (localModelFile().length() / (1024 * 1024)) + " MB"
+                    logCommunication("LOCAL MODEL", "Imported model file to app-private storage.")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Model import failed: " + (e.message ?: "unknown error") }
+            }
+        }.start()
+    }
+
+    private fun generateLocalAi(prompt: String): String {
+        val options = com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions.builder()
+            .setModelPath(localModelFile().absolutePath)
+            .setMaxTokens(512)
+            .build()
+        val engine = com.google.mediapipe.tasks.genai.llminference.LlmInference.createFromOptions(this, options)
+        return try { engine.generateResponse(prompt) } finally { engine.close() }
+    }
+
+    private fun localRulePlan(userTask: String, screen: String, previousResult: String): String {
+        val lower = screen.lowercase()
+        val taskLower = userTask.lowercase()
+        fun command(action: String, text: String, reason: String) =
+            JSONObject().put("action", action).put("text", text).put("reason", reason).toString()
+        if (screen.isBlank() || (lower.contains("pocket agent") && !lower.contains("quiz and earn") && !lower.contains("mega offer"))) {
+            val app = if (taskLower.contains("quiz and earn")) "Quiz and Earn" else
+                Regex("(?:open|launch|go to)\\s+([A-Za-z0-9][A-Za-z0-9 &_-]{1,40})", RegexOption.IGNORE_CASE)
+                    .find(userTask)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', '?') ?: ""
+            if (app.isNotBlank()) return command("open_app", app, "The target app is not open.")
+            return command("ask_user", "Open the target app, then start the task again.", "Local rules need a visible target app.")
+        }
+        if (previousResult.contains("Could not find", true) || previousResult.contains("failed", true)) {
+            return command("ask_user", "The last action failed. Check the screen and choose the next step.", previousResult.take(180))
+        }
+        val nodes = screen.lines().map { it.trim() }.filter { it.length in 2..90 }.distinct()
+        val keywords = when {
+            taskLower.contains("mega offer") -> listOf("mega offer", "offer", "continue", "claim", "start")
+            taskLower.contains("claim") || taskLower.contains("reward") -> listOf("claim", "collect", "reward", "continue", "done")
+            taskLower.contains("quiz") -> listOf("quiz", "play", "start", "continue", "next")
+            taskLower.contains("search") -> listOf("search", "next", "continue")
+            else -> listOf("continue", "next", "done", "close")
+        }
+        val candidate = nodes.firstOrNull { line -> keywords.any { kw -> line.equals(kw, true) } }
+            ?: nodes.firstOrNull { line -> keywords.any { kw -> line.contains(kw, true) } }
+        if (candidate != null) return command("tap_text", candidate, "Matched a visible label to task keywords.")
+        if (taskLower.contains("scroll") || screen.length > 1200) return command("scroll_down", "", "No matching label; inspect lower screen content.")
+        return command("ask_user", "I couldn't match a safe button. Tell me which visible button to use.", "Local rules won't guess randomly.")
+    }
+
     private fun confirmLogout() {
         AlertDialog.Builder(this)
             .setTitle("Log out of Pocket Agent?")
@@ -886,13 +949,22 @@ Previous action result: ${lastResult.take(500)}
         }
 
         askButton.isEnabled = false
-        askButton.text = "Connecting…"
-        status.text = "Sending request to Gemini…"
-        logCommunication("REQUEST", "Model: " + chosenModel + "\nTask: " + userTask.take(500))
-        answerView.text = "Waiting for Gemini's response. Keep this screen open."
+        askButton.text = "Working…"
+        status.text = when (mode) { 1 -> "Running local AI on this phone…"; 2 -> "Planning with local rules…"; else -> "Sending request to cloud AI…" }
+        logCommunication("REQUEST", "Mode: " + modeSpinner.selectedItem.toString() + "\nModel: " + chosenModel + "\nTask: " + userTask.take(500))
+        answerView.text = if (mode == 2) "Using local rules. No API or model required." else if (mode == 1) "Running inference locally; no task text is sent to cloud AI." else "Waiting for cloud AI response. Keep this screen open."
         Thread {
             var connection: HttpURLConnection? = null
             try {
+                if (mode != 0) {
+                    val localResponse = if (mode == 1) generateLocalAi(prompt) else localRulePlan(userTask, screen, "")
+                    runOnUiThread {
+                        answerView.text = localResponse
+                        status.text = if (mode == 1) "Local AI response · no API used" else "Local rules response · no API used"
+                        saveHistory(userTask, modeSpinner.selectedItem.toString(), localResponse)
+                    }
+                    return@Thread
+                }
                 val safeModel = java.net.URLEncoder.encode(chosenModel, "UTF-8")
                 connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$safeModel:generateContent?key=$key")
                     .openConnection() as HttpURLConnection).apply {
