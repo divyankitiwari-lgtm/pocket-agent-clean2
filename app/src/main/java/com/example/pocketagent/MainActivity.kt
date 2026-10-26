@@ -641,8 +641,9 @@ class MainActivity : Activity() {
     }
 
     private fun currentPlan(): String {
-        if (isAdminAccount()) return "Max"
-        val chosen = prefs.getString("selected_plan", "Free").orEmpty()
+        // Verified admins may switch the local test preview among tiers. This does
+        // not change server-side paid entitlements or the Firestore authorization role.
+        val chosen = prefs.getString("selected_plan", if (isAdminAccount()) "Max" else "Free").orEmpty()
         return if (chosen in listOf("Free", "Premium", "Max")) chosen else "Free"
     }
 
