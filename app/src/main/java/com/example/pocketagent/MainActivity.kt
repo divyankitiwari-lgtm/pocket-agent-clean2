@@ -158,6 +158,20 @@ class MainActivity : Activity() {
         })
         content.addView(hero, margins(bottom = 14))
 
+        val plansCard = card(white)
+        plansCard.addView(sectionTitle("PLANS · FREE / PREMIUM / MAX"))
+        plansCard.addView(TextView(this).apply {
+            text = "Free: 60 steps per task. Premium: up to 4 hours per task. Max: no app-imposed step cap. API quota, connection, and safety limits still apply."
+            textSize = 13f
+            setTextColor(muted)
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        })
+        val plansButton = actionButton("View plans & select tier", Color.rgb(238, 235, 255), accent)
+        plansButton.setOnClickListener { showPlanOptions() }
+        plansCard.addView(plansButton, margins(bottom = 10))
+        content.addView(plansCard, margins(bottom = 14))
+
         val setup = card(white)
         setup.addView(sectionTitle("01  ·  CONNECTION"))
         setup.addView(label("Gemini API key"))
@@ -334,6 +348,36 @@ class MainActivity : Activity() {
         if (!prefs.getBoolean("demo_account_created", false)) {
             content.post { showWelcomeGate() }
         }
+    }
+
+    private fun isAdminAccount(): Boolean =
+        prefs.getString("demo_email", "").orEmpty().trim().equals("divyankitiwari@gmail.com", ignoreCase = true)
+
+    private fun currentPlan(): String {
+        if (isAdminAccount()) return "Max"
+        val chosen = prefs.getString("selected_plan", "Free").orEmpty()
+        return if (chosen in listOf("Free", "Premium", "Max")) chosen else "Free"
+    }
+
+    private fun showPlanOptions() {
+        if (isAdminAccount()) {
+            prefs.edit().putString("selected_plan", "Max").apply()
+            AlertDialog.Builder(this).setTitle("Admin plan · Max")
+                .setMessage("This prototype recognises the configured admin email locally. This is NOT secure authentication: anyone who types this email can impersonate the admin until verified sign-in is implemented. API limits still apply.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        val plans = arrayOf("Free · ₹0 · 60 steps per task", "Premium · 4-hour task sessions", "Max · no app-imposed step cap")
+        AlertDialog.Builder(this).setTitle("Choose a plan")
+            .setSingleChoiceItems(plans, listOf("Free", "Premium", "Max").indexOf(currentPlan())) { dialog, which ->
+                val selected = listOf("Free", "Premium", "Max")[which]
+                prefs.edit().putString("selected_plan", selected).apply()
+                status.text = "$selected plan selected · prototype only"
+                dialog.dismiss()
+                AlertDialog.Builder(this).setTitle("$selected selected")
+                    .setMessage("Local prototype selection only. Real payments and verified entitlements are not connected. API limits still apply.")
+                    .setPositiveButton("OK", null).show()
+            }.setNegativeButton("Cancel", null).show()
     }
 
     private fun showWelcomeGate() {
@@ -587,7 +631,11 @@ class MainActivity : Activity() {
         Thread {
             try {
                 var lastResult = ""
-                for (step in 1..60) {
+                var step = 1
+                val sessionStartedAt = System.currentTimeMillis()
+                while (agentRunning &&
+                    (currentPlan() != "Free" || step <= 60) &&
+                    (currentPlan() != "Premium" || System.currentTimeMillis() - sessionStartedAt < 4L * 60L * 60L * 1000L)) {
                     if (!agentRunning || !prefs.getBoolean("session_active", false)) break
                     var screen = prefs.getString("latest_screen_text", "").orEmpty()
                     if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
@@ -636,6 +684,12 @@ Previous action result: ${lastResult.take(500)}
                         }
                         else -> { runOnUiThread { answerView.text = "Unsupported action: " + action; status.text = "Agent paused for safety" }; break }
                     }
+                    step++
+                }
+                if (agentRunning && currentPlan() == "Free" && step > 60) {
+                    runOnUiThread { answerView.append("\\n\\nFree plan limit reached (60 steps). Start a new task to continue."); status.text = "Free plan · 60-step limit reached" }
+                } else if (agentRunning && currentPlan() == "Premium" && System.currentTimeMillis() - sessionStartedAt >= 4L * 60L * 60L * 1000L) {
+                    runOnUiThread { answerView.append("\\n\\nPremium session limit reached (4 hours)."); status.text = "Premium · 4-hour session ended" }
                 }
             } catch (e: Exception) {
                 val message = "Agent error: " + (e.message ?: "unknown error")
