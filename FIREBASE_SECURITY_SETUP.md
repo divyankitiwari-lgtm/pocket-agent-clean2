@@ -5,7 +5,11 @@ The Android client now includes Firebase email/password sign-up/sign-in, user-pr
 ## Free-tier-first setup
 
 1. Create a Firebase project in the Firebase console and register the Android app with package name `com.example.pocketagent`.
-2. Download the matching `google-services.json` into `app/` only after verifying the Android package name. Do not paste private service-account keys or admin credentials into the repository.
+2. Download the matching `google-services.json` for package `com.example.pocketagent`. Keep it out of Git: `app/google-services.json` is now ignored by `.gitignore`.
+   - For a local build, place the file at `app/google-services.json`.
+   - For GitHub Actions builds, open **Repository → Settings → Secrets and variables → Actions → New repository secret**. Name it `FIREBASE_GOOGLE_SERVICES_JSON` and paste the complete contents of the Firebase-generated JSON file as the secret value. The workflow writes it only into the temporary runner, validates the Android package name, and does not print the contents in logs.
+   - If this secret is absent, CI still builds the offline-capable app, but Firebase login, cloud profile sync, and the bug inbox remain unavailable.
+   - Never put Firebase Admin SDK service-account JSON, private keys, passwords, or admin credentials in this secret or the Android app.
 3. Enable **Authentication → Sign-in method → Email/Password**.
 4. Create a Firestore database and publish the repository's `firestore.rules` after testing them in the Firebase Rules Playground / Emulator.
 5. Use Firebase Authentication for passwords. The app must never store plaintext passwords, log them, or try to encrypt passwords itself. Firebase manages password authentication.
