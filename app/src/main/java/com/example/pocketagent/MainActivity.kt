@@ -881,29 +881,6 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun showDemoPayments() {
-        val options = arrayOf(
-            "Free · ₹0 · No payment",
-            "Plus demo · ₹99 · SIMULATION ONLY",
-            "Pro demo · ₹199 · SIMULATION ONLY",
-            "Google Play balance · preview only"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("Demo plans & payments")
-            .setMessage("TEST MODE ONLY — no payment provider is connected. These choices never charge money and do not unlock paid services.")
-            .setItems(options) { _, which ->
-                val choice = options[which]
-                prefs.edit().putString("demo_plan_selection", choice).apply()
-                AlertDialog.Builder(this)
-                    .setTitle("Demo selection recorded")
-                    .setMessage("$choice\n\nSimulation only. No payment was attempted, no Google Play transaction occurred, and no real subscription was created.")
-                    .setPositiveButton("OK", null)
-                    .show()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun rounded(color: Int, radius: Int): GradientDrawable =
