@@ -27,4 +27,5 @@ android {
 
 dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("com.google.mediapipe:tasks-genai:0.10.27")
 }
