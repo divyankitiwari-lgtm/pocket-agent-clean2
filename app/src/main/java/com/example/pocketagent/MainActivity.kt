@@ -500,8 +500,11 @@ class MainActivity : Activity() {
 
     private fun showAdminBanner() {
         if (!isAdminAccount()) return
+        // Keep one persistent banner so the admin status is not missed after 10 seconds.
+        contentLayout.findViewWithTag<View>("pocket_agent_admin_banner")?.let { return }
         val banner = TextView(this).apply {
-            text = "YOU ARE ADMIN · MAX PLAN ACTIVE"
+            tag = "pocket_agent_admin_banner"
+            text = "✓ ADMIN ACCESS ACTIVE · MAX PLAN"
             textSize = 14f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = android.view.Gravity.CENTER
@@ -516,13 +519,13 @@ class MainActivity : Activity() {
         contentLayout.addView(banner, 0, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(dp(16), dp(8), dp(16), dp(12)) })
-        banner.postDelayed({
-            (banner.parent as? android.view.ViewGroup)?.removeView(banner)
-        }, 10_000L)
     }
 
-    private fun isAdminAccount(): Boolean =
-        listOf("divyankitiwari@gmail.com", "aradhyadeopa0@gmail.com").any { it.equals(prefs.getString("demo_email", "").orEmpty().trim(), ignoreCase = true) }
+    private fun isAdminAccount(): Boolean {
+        val savedEmail = prefs.getString("demo_email", "").orEmpty().trim()
+        return savedEmail.equals("divyankitiwari@gmail.com", ignoreCase = true) ||
+            savedEmail.equals("aradhyadeopa0@gmail.com", ignoreCase = true)
+    }
 
     private fun currentPlan(): String {
         if (isAdminAccount()) return "Max"
