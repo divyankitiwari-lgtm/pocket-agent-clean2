@@ -252,38 +252,92 @@ class AgentAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) collectVisibleLabels(node.getChild(i), out, depth + 1)
     }
 
+    private fun normalizeLabel(value: CharSequence?): String =
+        value?.toString()?.lowercase()?.replace("&", " and ")
+            ?.replace(Regex("[^a-z0-9]+"), " ")?.trim()
+            ?.replace(Regex("\\s+"), " ").orEmpty()
+
     private fun clickNodeByText(root: AccessibilityNodeInfo?, target: String): Boolean {
-        if (root == null) return false
-        val candidates = root.findAccessibilityNodeInfosByText(target)
-        for (candidate in candidates) {
-            if (candidate.isClickable) {
-                showTapMarker(candidate)
-                if (candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        if (root == null || target.isBlank()) return false
+        val wanted = normalizeLabel(target)
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        try { candidates.addAll(root.findAccessibilityNodeInfosByText(target)) } catch (_: Exception) { }
+        // Some quiz apps expose labels as nested text nodes rather than the clickable answer card.
+        fun collectMatches(node: AccessibilityNodeInfo?, depth: Int) {
+            if (node == null || depth > 24 || candidates.size > 160) return
+            val label = normalizeLabel(node.text ?: node.contentDescription)
+            if (label.isNotBlank() && (label == wanted || label.contains(wanted) || wanted.contains(label))) {
+                if (candidates.none { it == node }) candidates.add(node)
             }
-            var parent = candidate.parent
+            for (i in 0 until node.childCount) collectMatches(node.getChild(i), depth + 1)
+        }
+        collectMatches(root, 0)
+        // Prefer the most exact label match and the nearest clickable parent.
+        val ordered = candidates.sortedBy { node ->
+            val label = normalizeLabel(node.text ?: node.contentDescription)
+            when { label == wanted -> 0; label.contains(wanted) -> 1; wanted.contains(label) -> 2; else -> 3 }
+        }
+        for (candidate in ordered) {
+            var current: AccessibilityNodeInfo? = candidate
             var depth = 0
-            while (parent != null && depth++ < 6) {
-                if (parent.isClickable) {
-                    showTapMarker(parent)
-                    if (parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            while (current != null && depth++ < 7) {
+                val bounds = android.graphics.Rect()
+                current.getBoundsInScreen(bounds)
+                if (bounds.width() >= dp(12) && bounds.height() >= dp(12)) {
+                    if (current.isClickable && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        showTapMarker(bounds)
+                        return true
+                    }
+                    // Custom MCQ cards often don't expose a clickable node. Tap the center of
+                    // the best matching text/card bounds using Android's accessibility gesture API.
+                    if (current == candidate && bounds.width() >= dp(20) && bounds.height() >= dp(20)) {
+                        if (tapCenter(bounds)) {
+                            showTapMarker(bounds)
+                            return true
+                        }
+                    }
                 }
-                parent = parent.parent
+                current = current.parent
             }
         }
         return false
     }
 
-    private fun showTapMarker(node: AccessibilityNodeInfo) {
+    private fun tapCenter(bounds: android.graphics.Rect): Boolean {
+        val x = bounds.centerX().toFloat()
+        val y = bounds.centerY().toFloat()
+        val path = Path().apply { moveTo(x, y); lineTo(x + 1f, y + 1f) }
+        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 80)
+        return dispatchGesture(android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build(), null, null)
+    }
+
+    private fun showTapMarker(bounds: android.graphics.Rect) {
         try {
-            val bounds = android.graphics.Rect()
-            node.getBoundsInScreen(bounds)
             if (bounds.width() < dp(12) || bounds.height() < dp(12)) return
-            val marker = View(this).apply {
-                background = GradientDrawable().apply {
-                    setColor(Color.argb(28, 255, 190, 40))
-                    setStroke(dp(3), Color.rgb(255, 176, 0))
-                    cornerRadius = dp(9).toFloat()
+            val marker = object : View(this) {
+                private val outline = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.rgb(255, 176, 0)
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = dp(3).toFloat()
                 }
+                private val centerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.rgb(255, 176, 0)
+                    style = android.graphics.Paint.Style.FILL
+                }
+                override fun onDraw(canvas: android.graphics.Canvas) {
+                    super.onDraw(canvas)
+                    val inset = dp(2).toFloat()
+                    canvas.drawRoundRect(inset, inset, width - inset, height - inset, dp(12).toFloat(), dp(12).toFloat(), outline)
+                    val cx = width / 2f
+                    val cy = height / 2f
+                    val radius = dp(5).toFloat()
+                    canvas.drawCircle(cx, cy, radius, centerPaint)
+                    val cross = dp(12).toFloat()
+                    canvas.drawLine(cx - cross, cy, cx + cross, cy, outline)
+                    canvas.drawLine(cx, cy - cross, cx, cy + cross, outline)
+                }
+            }.apply {
+                setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(18).toFloat()
             }
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -306,7 +360,7 @@ class AgentAccessibilityService : AccessibilityService() {
             handler.postDelayed({
                 try { tapMarker?.let { wm.removeView(it) } } catch (_: Exception) { }
                 tapMarker = null
-            }, 700)
+            }, 900)
         } catch (_: Exception) { }
     }
 
