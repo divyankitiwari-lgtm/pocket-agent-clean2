@@ -791,7 +791,7 @@ class MainActivity : Activity() {
             .setView(panel)
             .setCancelable(false).setPositiveButton("Create account", null)
             .setNegativeButton("Sign in", null)
-            .setNeutralButton(if (firebaseReady) "Setup help" else "Continue offline").create()
+            .setNeutralButton(if (firebaseReady) "Setup help" else "Continue offline", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val displayName = name.text.toString().trim()
