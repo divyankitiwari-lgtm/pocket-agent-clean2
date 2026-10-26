@@ -23,12 +23,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var model: Spinner
+    private lateinit var modeSpinner: Spinner
     private lateinit var apiKey: EditText
     private lateinit var openRouterKey: EditText
     private lateinit var task: EditText
@@ -961,12 +963,13 @@ Previous action result: ${lastResult.take(500)}
     }
 
     private fun sendGeminiRequest() {
+        val mode = modeSpinner.selectedItemPosition
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
         val isOpenRouter = chosenModel.startsWith("openrouter/")
         val key = if (isOpenRouter) openRouterKey.text.toString().trim().ifBlank { securePrefs.getString("openrouter_api_key", "").orEmpty() }
             else apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val userTask = task.text.toString().trim()
-        if (key.isEmpty()) {
+        if (mode == 0 && key.isEmpty()) {
             status.text = "Missing API key"
             answerView.text = if (isOpenRouter) "Paste an OpenRouter API key in the Connection section and save it." else "Paste your Gemini API key in the Connection section first. You can save it on this phone using the secure-save button."
             return
