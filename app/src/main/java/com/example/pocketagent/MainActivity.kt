@@ -42,10 +42,10 @@ class MainActivity : Activity() {
     private lateinit var securePrefs: android.content.SharedPreferences
     private lateinit var contentLayout: LinearLayout
 
-    private val ink = Color.rgb(27, 30, 47)
-    private val muted = Color.rgb(115, 119, 139)
-    private val accent = Color.rgb(117, 92, 255)
-    private val page = Color.rgb(246, 245, 252)
+    private val ink = Color.rgb(24, 28, 52)
+    private val muted = Color.rgb(104, 111, 139)
+    private val accent = Color.rgb(105, 78, 255)
+    private val page = Color.rgb(237, 242, 255)
     private val white = Color.WHITE
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +62,10 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(page)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(226, 235, 255), Color.rgb(248, 239, 255), Color.rgb(225, 248, 255))
+            )
         }
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply {
@@ -634,13 +637,20 @@ class MainActivity : Activity() {
         GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(radius).toFloat()
+            setStroke(dp(1), Color.argb(105, 255, 255, 255))
         }
 
     private fun card(color: Int): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(color, 22)
-        elevation = dp(2).toFloat()
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.argb(248, 255, 255, 255), Color.argb(238, 246, 247, 255))
+        ).apply {
+            cornerRadius = dp(24).toFloat()
+            setStroke(dp(1), Color.argb(190, 255, 255, 255))
+        }
+        elevation = dp(5).toFloat()
     }
 
     private fun margins(bottom: Int = 0): LinearLayout.LayoutParams =
@@ -675,26 +685,44 @@ class MainActivity : Activity() {
     }
 
     private fun actionButton(title: String, bg: Int, fg: Int) = Button(this).apply {
-        val normalBackground = rounded(bg, 16)
+        val normalBackground = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            if (bg == accent || bg == Color.rgb(30, 32, 48))
+                intArrayOf(accent, Color.rgb(71, 119, 255))
+            else intArrayOf(bg, blendWithWhite(bg))
+        ).apply {
+            cornerRadius = dp(17).toFloat()
+            setStroke(dp(1), Color.argb(100, 255, 255, 255))
+        }
         text = title
         textSize = 13f
         isAllCaps = false
+        gravity = Gravity.CENTER
+        textAlignment = View.TEXT_ALIGNMENT_CENTER
         setTypeface(null, Typeface.BOLD)
-        setTextColor(fg)
+        setTextColor(if (bg == accent || bg == Color.rgb(30, 32, 48)) Color.WHITE else fg)
         background = normalBackground
-        // Clear visual press feedback: briefly turn grey while the finger is down.
+        // Keep the touch target unchanged; show a subtle pressed state instead of moving bounds.
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.background = rounded(Color.rgb(185, 188, 198), 16)
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.background = normalBackground
+                MotionEvent.ACTION_DOWN -> view.alpha = 0.78f
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.alpha = 1f
             }
-            false // preserve normal click handling
+            false
         }
-        minHeight = dp(48)
+        minHeight = dp(52)
+        minimumHeight = dp(52)
         stateListAnimator = null
-        elevation = 0f
-        setPadding(dp(12), dp(10), dp(12), dp(10))
+        elevation = dp(1).toFloat()
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        contentDescription = title
     }
+
+    private fun blendWithWhite(color: Int): Int = Color.rgb(
+        (Color.red(color) + 255) / 2,
+        (Color.green(color) + 255) / 2,
+        (Color.blue(color) + 255) / 2
+    )
 
     override fun onResume() {
         super.onResume()
