@@ -522,7 +522,7 @@ class MainActivity : Activity() {
     }
 
     private fun isAdminAccount(): Boolean =
-        prefs.getString("demo_email", "").orEmpty().trim().equals("divyankitiwari@gmail.com", ignoreCase = true)
+        listOf("divyankitiwari@gmail.com", "aradhyadeopa0@gmail.com").any { it.equals(prefs.getString("demo_email", "").orEmpty().trim(), ignoreCase = true) }
 
     private fun currentPlan(): String {
         if (isAdminAccount()) return "Max"
@@ -590,7 +590,7 @@ class MainActivity : Activity() {
                     .putString("demo_email", emailValue).apply()
                 dialog.dismiss()
                 status.text = "Demo profile created locally · no real account was made"
-                if (emailValue.equals("divyankitiwari@gmail.com", ignoreCase = true)) {
+                if (emailValue.equals("divyankitiwari@gmail.com", ignoreCase = true) || emailValue.equals("aradhyadeopa0@gmail.com", ignoreCase = true)) {
                     contentLayout.post { showAdminBanner() }
                 }
             }
