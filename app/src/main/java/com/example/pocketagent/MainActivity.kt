@@ -870,12 +870,25 @@ ${screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
 """.trimIndent()
                     val raw = when (mode) {
-                        1 -> generateLocalAi(instruction)
+                        1 -> try {
+                            generateLocalAi(instruction)
+                        } catch (localError: Exception) {
+                            logCommunication("LOCAL AI FALLBACK", "On-device inference failed: " + (localError.message ?: "unknown error") + ". Trying safe local rules for this step.")
+                            localRulePlan(userTask, screen, lastResult)
+                        }
                         2 -> localRulePlan(userTask, screen, lastResult)
                         else -> requestGeminiText(key, chosenModel, instruction)
                     }
-                    val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value ?: throw IllegalStateException("Planner did not return valid action JSON.")
-                    val command = JSONObject(match)
+                    val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value
+                    val command = try {
+                        if (match != null) JSONObject(match)
+                        else throw IllegalStateException("Planner did not return action JSON.")
+                    } catch (parseError: Exception) {
+                        if (mode == 1) {
+                            logCommunication("LOCAL AI FALLBACK", "Local model response was not valid action JSON. Trying safe local rules for this step.")
+                            JSONObject(localRulePlan(userTask, screen, lastResult))
+                        } else throw IllegalStateException("Planner did not return valid action JSON.")
+                    }
                     val action = command.optString("action", "ask_user")
                     val textValue = command.optString("text", "")
                     val reason = command.optString("reason", "")
