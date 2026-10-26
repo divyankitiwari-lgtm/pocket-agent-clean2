@@ -216,6 +216,40 @@ class MainActivity : Activity() {
             }
         }
         setup.addView(saveOpenRouterKeyButton, margins(bottom = 10))
+        setup.addView(label("Operating mode"))
+        modeSpinner = Spinner(this).apply {
+            val modes = listOf("Cloud API · Gemini / OpenRouter", "Local AI · on-device model", "Local Rules · no API")
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modes).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(prefs.getInt("agent_mode", 0).coerceIn(0, 2))
+            background = rounded(Color.rgb(247, 247, 252), 16)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+        }
+        modeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putInt("agent_mode", position).apply()
+                if (::askButton.isInitialized) askButton.text = when (position) { 1 -> "Ask local AI"; 2 -> "Plan with local rules"; else -> "Ask cloud AI" }
+                if (::status.isInitialized) status.text = when (position) {
+                    1 -> if (localModelFile().exists()) "Local model found · no API key needed" else "Import a compatible .task model for Local AI"
+                    2 -> "Local Rules mode · no API or model required"
+                    else -> "Cloud mode selected · API key required"
+                }
+            }
+        }
+        setup.addView(modeSpinner, margins(bottom = 8))
+        val localModelButton = actionButton("Import local AI model (.task)", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125))
+        localModelButton.setOnClickListener {
+            val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
+            startActivityForResult(pick, 7412)
+        }
+        setup.addView(localModelButton, margins(bottom = 8))
+        setup.addView(TextView(this).apply {
+            text = "Local AI requires a compatible MediaPipe LLM .task model downloaded separately. Local Rules needs no model or API but is less flexible."
+            textSize = 12f
+            setTextColor(muted)
+        }, margins(bottom = 8))
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
