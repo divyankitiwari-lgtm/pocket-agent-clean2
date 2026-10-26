@@ -27,6 +27,28 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Configure Firebase Android app (optional)
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        shell: bash
+        run: |
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          config = json.loads(Path("app/google-services.json").read_text())
+          packages = [
+              client.get("client_info", {}).get("android_client_info", {}).get("package_name")
+              for client in config.get("client", [])
+          ]
+          if "com.example.pocketagent" not in packages:
+              raise SystemExit("Firebase config package mismatch: expected com.example.pocketagent")
+          PY
+            echo "Firebase configuration validated for the app package."
+          else
+            echo "Firebase config secret not set; building the offline-capable app."
+          fi
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
