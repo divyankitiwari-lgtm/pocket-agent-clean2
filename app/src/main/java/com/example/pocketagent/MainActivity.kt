@@ -179,10 +179,10 @@ class MainActivity : Activity() {
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
             letterSpacing = 0.12f
-            setTextColor(accent)
+            setTextColor(Color.rgb(120, 184, 255))
         })
         hero.addView(TextView(this).apply {
-            text = "Your screen.\\nYour instructions."
+            text = "Your screen.\nYour instructions."
             textSize = 29f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -191,8 +191,8 @@ class MainActivity : Activity() {
         hero.addView(TextView(this).apply {
             text = "One simple instruction. An assistant that can navigate apps, tap, type, and check each step. You stay in control with clear start, pause, and stop controls."
             textSize = 14f
-            setTextColor(muted)
-            setLineSpacing(dp(3).toFloat(), 1f)
+            setTextColor(Color.rgb(190, 190, 196))
+            setLineSpacing(dp(4).toFloat(), 1f)
         })
         content.addView(hero, margins(bottom = 14))
 
