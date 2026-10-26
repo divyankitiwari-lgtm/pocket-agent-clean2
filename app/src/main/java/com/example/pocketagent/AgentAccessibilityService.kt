@@ -29,6 +29,7 @@ class AgentAccessibilityService : AccessibilityService() {
     private var agentPauseButton: Button? = null
     private var windowManager: WindowManager? = null
     private var tapMarker: View? = null
+    private var lastEventTimestampSaved = 0L
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -144,17 +145,24 @@ class AgentAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        val now = System.currentTimeMillis()
+        if (now - lastEventTimestampSaved >= 3000L) {
+            getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
+                .putLong("last_accessibility_event", now).apply()
+            lastEventTimestampSaved = now
+        }
         syncAgentTab()
         processActiveWindow()
     }
 
     private fun processActiveWindow() {
         val prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
-        prefs.edit().putLong("last_accessibility_event", System.currentTimeMillis()).apply()
         if (!prefs.getBoolean("session_active", false)) return
 
-        if (prefs.getBoolean("agent_paused", false)) return
-        val pending = prefs.getString("pending_action", "").orEmpty()
+        // Pause blocks execution but still refreshes the screen snapshot so resume plans
+        // against the current screen rather than stale labels.
+        val paused = prefs.getBoolean("agent_paused", false)
+        val pending = if (paused) "" else prefs.getString("pending_action", "").orEmpty()
         if (pending.isNotBlank()) {
             // Clear first so a repeated accessibility event cannot execute the same command twice.
             prefs.edit().putString("pending_action", "").apply()
@@ -196,7 +204,11 @@ class AgentAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         val labels = ArrayList<String>()
         collectVisibleLabels(root, labels, 0)
-        prefs.edit().putString("latest_screen_text", labels.distinct().take(120).joinToString("\n")).apply()
+        val snapshot = labels.distinct().take(120).joinToString("\n")
+        // Avoid repeated SharedPreferences writes while the visible screen is unchanged.
+        if (prefs.getString("latest_screen_text", "").orEmpty() != snapshot) {
+            prefs.edit().putString("latest_screen_text", snapshot).apply()
+        }
     }
 
     private fun openAppByLabel(query: String): String {
