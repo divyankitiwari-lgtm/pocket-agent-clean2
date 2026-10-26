@@ -301,7 +301,7 @@ class MainActivity : Activity() {
             buttonTintList = android.content.res.ColorStateList.valueOf(accent)
         }
         taskCard.addView(useScreen, margins(bottom = 12))
-        askButton = actionButton("Ask Gemini", accent, white).apply { visibility = View.GONE }
+        askButton = actionButton("Ask cloud AI", accent, white)
         askButton.setOnClickListener { sendGeminiRequest() }
         taskCard.addView(askButton, margins(bottom = 8))
         val agentButton = actionButton("▶ Run task", Color.rgb(30, 32, 48), Color.WHITE)
@@ -787,12 +787,15 @@ class MainActivity : Activity() {
     }
 
     private fun startAutonomousAgent(agentButton: Button) {
+        val mode = modeSpinner.selectedItemPosition
         val chosenModel = model.selectedItem.toString().substringAfter("—").trim()
         val isOpenRouter = chosenModel.startsWith("openrouter/")
         val key = if (isOpenRouter) openRouterKey.text.toString().trim().ifBlank { securePrefs.getString("openrouter_api_key", "").orEmpty() }
             else apiKey.text.toString().trim().ifBlank { securePrefs.getString("gemini_api_key", "").orEmpty() }
         val userTask = task.text.toString().trim()
-        if (key.isBlank() || userTask.isBlank()) { status.text = if (key.isBlank()) "Add the API key for the selected provider first" else "Describe the task first"; return }
+        if (userTask.isBlank()) { status.text = "Describe your task first"; return }
+        if (mode == 0 && key.isBlank()) { status.text = "Add an API key for cloud mode, or choose a local mode"; return }
+        if (mode == 1 && !localModelFile().exists()) { status.text = "Import a compatible .task local model first"; return }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
@@ -864,8 +867,12 @@ Visible screen text:
 ${screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
 """.trimIndent()
-                    val raw = requestGeminiText(key, chosenModel, instruction)
-                    val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value ?: throw IllegalStateException("Gemini did not return a valid action JSON.")
+                    val raw = when (mode) {
+                        1 -> generateLocalAi(instruction)
+                        2 -> localRulePlan(userTask, screen, lastResult)
+                        else -> requestGeminiText(key, chosenModel, instruction)
+                    }
+                    val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value ?: throw IllegalStateException("Planner did not return valid action JSON.")
                     val command = JSONObject(match)
                     val action = command.optString("action", "ask_user")
                     val textValue = command.optString("text", "")
