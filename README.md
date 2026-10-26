@@ -1,6 +1,6 @@
 # Pocket Agent Clean 2
 
-> **Status:** experimental Android build. The dashboard now has a colorful glass-inspired visual refresh and the accessibility target selector has been tightened. Firebase rules are a starter template only; Firebase Auth/Firestore are **not yet connected to the app**, and demo sign-in is not secure online authentication.
+> **Status:** experimental Android build. The dashboard now has a colorful glass-inspired visual refresh and the accessibility target selector has been tightened. Firebase rules are a starter template only; Firebase Auth/Firestore client flows are now in the code, but they remain **inactive until the owner adds a matching `app/google-services.json`, configures Firebase Authentication/Firestore, and publishes tested rules**.
 
 A clean Android starter for a Gemini-powered screen assistant, designed to build an APK through GitHub Actions so the project can be managed from a phone.
 
@@ -29,9 +29,9 @@ A clean Android starter for a Gemini-powered screen assistant, designed to build
 ## Important limitations
 - This is still an experimental UI-control prototype. Accessibility clicks can fail on apps with custom canvases, hidden labels, overlays, or unusual accessibility trees. Test carefully and keep Stop available.
 - The glass effect is implemented with native gradients, translucent white card colors, outlines, and elevation; it is not a real-time background blur effect.
-- Sign-in is currently a local demo profile, not Firebase Authentication. Never use it to protect real user data.
-- Firebase Auth/Firestore are not wired into the Android app yet. Rules in `firestore.rules` are a starter and must be tested in Firebase Emulator/Rules Playground before deployment.
-- Admin UI checks in a client are not a security boundary. Production admin access requires trusted Firebase custom claims and server-side enforcement.
+- Firebase email/password sign-up and sign-in are implemented in the client code. They require the project owner’s matching `app/google-services.json`, Email/Password provider enabled, and Firestore configured before they can run. Do not distribute a build as production-ready until configured and tested.
+- Firebase Auth and Firestore dependencies/client calls are in the Android app, but no Firebase project config is included in this repository. Rules in `firestore.rules` are a starter and must be tested in Firebase Emulator/Rules Playground before deployment.
+- Admin UI checks in a client are not a security boundary. The app checks the Firebase ID token’s `admin` custom claim for its admin console; production admin access still requires granting that claim only from a trusted Admin SDK and enforcing the Firestore rules. The bug-report inbox is stored in Firebase but is not automatically delivered to ChatGPT.
 - “Local AI” is not currently a verified on-device LLM integration; some agent paths use deterministic local rules. Importing a model file alone does not prove that inference works.
 - Accessibility text may be incomplete on some screens. Cloud mode sends your task and, when enabled, observed screen labels to the selected provider. Do not include passwords, API keys, payment details, OTPs, or other sensitive information.
 
@@ -47,3 +47,7 @@ The API key is held in memory while the app process is running and is not saved 
 ## Enhancement tracking
 - [Pocket Agent v2 issue #1](https://github.com/divyankitiwari-lgtm/pocket-agent-clean2/issues/1) tracks the remaining UI, accessibility, AI reliability, Firebase authentication, admin plan preview, and bug-report console work.
 - [Firebase setup and security notes](FIREBASE_SECURITY_SETUP.md)
+
+
+## Firebase client status
+The app includes Firebase Authentication and Firestore client calls. For a working account/database build, add your Firebase-generated `app/google-services.json` privately (do not add service-account private keys), enable Email/Password Authentication, create Firestore, test and publish `firestore.rules`, and grant admin custom claims through a trusted backend. The current repository does not contain your Firebase project configuration, so the connected account/database path cannot be verified from this code alone.
