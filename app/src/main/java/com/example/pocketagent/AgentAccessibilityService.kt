@@ -280,24 +280,31 @@ class AgentAccessibilityService : AccessibilityService() {
         for (candidate in ordered) {
             var current: AccessibilityNodeInfo? = candidate
             var depth = 0
+            var bestTapBounds: android.graphics.Rect? = null
+            var bestArea = 0L
+            val screenArea = resources.displayMetrics.widthPixels.toLong() * resources.displayMetrics.heightPixels.toLong()
             while (current != null && depth++ < 7) {
                 val bounds = android.graphics.Rect()
                 current.getBoundsInScreen(bounds)
-                if (bounds.width() >= dp(12) && bounds.height() >= dp(12)) {
+                if (bounds.width() >= dp(20) && bounds.height() >= dp(20)) {
+                    val area = bounds.width().toLong() * bounds.height().toLong()
+                    // Save the largest reasonable ancestor (usually the answer card), but not
+                    // a full-screen container. This makes the gesture land near the card center.
+                    if (area < screenArea * 3 / 4 && area > bestArea) {
+                        bestArea = area
+                        bestTapBounds = android.graphics.Rect(bounds)
+                    }
                     if (current.isClickable && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                         showTapMarker(bounds)
                         return true
                     }
-                    // Custom MCQ cards often don't expose a clickable node. Tap the center of
-                    // the best matching text/card bounds using Android's accessibility gesture API.
-                    if (current == candidate && bounds.width() >= dp(20) && bounds.height() >= dp(20)) {
-                        if (tapCenter(bounds)) {
-                            showTapMarker(bounds)
-                            return true
-                        }
-                    }
                 }
                 current = current.parent
+            }
+            val tapBounds = bestTapBounds
+            if (tapBounds != null && tapCenter(tapBounds)) {
+                showTapMarker(tapBounds)
+                return true
             }
         }
         return false
