@@ -52,6 +52,7 @@ class MainActivity : Activity() {
     private lateinit var contentLayout: LinearLayout
     private var firebaseAuth: FirebaseAuth? = null
     private var firestore: FirebaseFirestore? = null
+    private var welcomeDialog: AlertDialog? = null
 
     private val ink = Color.rgb(29, 29, 31)
     private val muted = Color.rgb(110, 110, 115)
@@ -459,7 +460,12 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 7413) {
             if (resultCode != RESULT_OK || data == null) {
-                status.text = "Google sign-in cancelled"
+                status.text = "Google sign-in was cancelled or did not return an account."
+                AlertDialog.Builder(this)
+                    .setTitle("Google sign-in didn't finish")
+                    .setMessage("Google returned without signing you in. If you selected your account and came back here, check the Firebase Google provider and the SHA-1 certificate for this exact APK. Try again after checking the setup.")
+                    .setPositiveButton("OK", null)
+                    .show()
                 return
             }
             try {
@@ -472,6 +478,8 @@ class MainActivity : Activity() {
                             status.text = "Google sign-in returned no Firebase user"
                             return@addOnSuccessListener
                         }
+                        welcomeDialog?.dismiss()
+                        welcomeDialog = null
                         refreshAdminClaim(user)
                         showAccountBanner(user)
                         status.text = "Signed in with Google"
@@ -487,10 +495,22 @@ class MainActivity : Activity() {
                             }
                     }
                     ?.addOnFailureListener { error ->
-                        status.text = "Firebase Google sign-in failed: " + (error.message ?: "check provider setup")
+                        val message = "Firebase Google sign-in failed: " + (error.message ?: "check provider setup")
+                        status.text = message
+                        AlertDialog.Builder(this)
+                            .setTitle("Google sign-in failed")
+                            .setMessage(message + "\n\nCheck that Google is enabled in Firebase Authentication and that the SHA-1 certificate for this APK is registered in Firebase.")
+                            .setPositiveButton("OK", null)
+                            .show()
                     }
             } catch (error: Exception) {
-                status.text = "Google sign-in failed: " + (error.message ?: "check Firebase OAuth setup")
+                val message = "Google sign-in failed: " + (error.message ?: "check Firebase OAuth setup")
+                status.text = message
+                AlertDialog.Builder(this)
+                    .setTitle("Google sign-in failed")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show()
             }
             return
         }
@@ -809,6 +829,7 @@ class MainActivity : Activity() {
             .setCancelable(false).setPositiveButton("Create account", null)
             .setNegativeButton("Sign in", null)
             .setNeutralButton("Continue offline", null).create()
+        welcomeDialog = dialog
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val displayName = name.text.toString().trim()
