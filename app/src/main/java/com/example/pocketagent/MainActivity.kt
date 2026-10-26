@@ -72,13 +72,58 @@ class MainActivity : Activity() {
         val menuButton = actionButton("☰  Menu & History", white, accent)
         menuButton.setOnClickListener { showHistoryMenu() }
         topBar.addView(menuButton, LinearLayout.LayoutParams(-2, dp(46)))
-        val liveButton = actionButton("◉ Live Communication", Color.rgb(30, 32, 48), Color.WHITE)
+        val liveButton = actionButton("◉ Live Activity", Color.rgb(30, 32, 48), Color.WHITE)
         liveButton.setOnClickListener {
-            val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank { "No Gemini events yet. Ask Gemini to populate this log." }
-            AlertDialog.Builder(this).setTitle("Pocket Agent · Live Communication").setMessage(log)
+            val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank {
+                "No activity yet. Start a task to see each planned action and its result here."
+            }
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(12), dp(16), dp(8))
+                setBackgroundColor(Color.rgb(247, 247, 252))
+            }
+            panel.addView(TextView(this).apply {
+                text = "LIVE TASK TRACE"
+                textSize = 11f
+                letterSpacing = 0.12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(accent)
+            }, margins(bottom = 6))
+            panel.addView(TextView(this).apply {
+                text = "Actions, tap results, and pauses · stored on this phone"
+                textSize = 12f
+                setTextColor(muted)
+            }, margins(bottom = 10))
+            val logView = TextView(this).apply {
+                text = log
+                textSize = 12f
+                typeface = Typeface.MONOSPACE
+                setTextColor(ink)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(Color.WHITE, 14)
+                setTextIsSelectable(true)
+            }
+            val logScroll = ScrollView(this).apply { addView(logView) }
+            panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(340)))
+            val liveDialog = AlertDialog.Builder(this)
+                .setTitle("Pocket Agent · Live Activity")
+                .setView(panel)
                 .setPositiveButton("Close", null)
-                .setNeutralButton("Clear log") { _, _ -> prefs.edit().putString("live_communication_log", "").apply() }
-                .show()
+                .setNeutralButton("Clear log", null)
+                .setNegativeButton("Copy log", null)
+                .create()
+            liveDialog.setOnShowListener {
+                liveDialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    prefs.edit().putString("live_communication_log", "").apply()
+                    logView.text = "Log cleared."
+                }
+                liveDialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Pocket Agent activity", logView.text.toString()))
+                    status.text = "Activity log copied"
+                }
+            }
+            liveDialog.show()
         }
         topBar.addView(liveButton, LinearLayout.LayoutParams(-2, dp(46)).apply { marginStart = dp(6) })
         val topStatus = TextView(this).apply {
