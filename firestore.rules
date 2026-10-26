@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Admin must be granted by a trusted server using Firebase custom claims.
+    // Never trust an email address or a client-side "isAdmin" preference.
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // A client may create/update only profile fields. Role/plan entitlements
+      // must be assigned by a trusted backend, not by a mobile client.
+      allow create: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.keys().hasAny(['admin', 'role', 'planEntitlement']);
+      allow update: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['admin', 'role', 'planEntitlement']);
+      allow delete: if isAdmin();
+    }
+
+    match /bugReports/{reportId} {
+      // User reports may contain only sanitized diagnostic details. Never send
+      // passwords, API keys, OTPs, or private screen text to this collection.
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'title', 'category', 'steps', 'expected', 'actual',
+          'appVersion', 'createdAt', 'status'
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.steps is string
+        && request.resource.data.steps.size() <= 4000
+        && request.resource.data.status == 'new';
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
