@@ -547,19 +547,19 @@ class MainActivity : Activity() {
                     var screen = prefs.getString("latest_screen_text", "").orEmpty()
                     if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
                     val instruction = """
-You control an Android screen through an accessibility service. Return ONLY one JSON object, no markdown:
-{"action":"tap_text","text":"exact visible label","reason":"brief reason"}
+You are the silent planning engine for Pocket Agent, an Android UI-control agent. You do not chat with the user. Return ONLY one JSON object and nothing else:
+{"action":"tap_text","text":"exact visible label","reason":"short internal reason"}
 Allowed actions: open_app, tap_text, type_text, scroll_down, scroll_up, back, home, done, ask_user.
-Use open_app to launch an installed app by its visible app name, e.g. {"action":"open_app","text":"YouTube","reason":"..."}.
-Use tap_text only for a visible UI label. Use type_text only when an editable field is visibly focused.
-Use scroll_down or scroll_up when the target content is not visible. Use back or home only when useful for the task.
-For done use {"action":"done","text":"completion summary","reason":"..."}; ask_user uses {"action":"ask_user","text":"what user must decide","reason":"..."}.
+Plan one safe, small action from the current screen, then inspect the next screen. Prefer exact visible labels. Use open_app only when the requested app is not already open. Never reopen an app just because a tap failed.
+Use scroll_down/up when the required control is off-screen. If the screen is an unexpected Google Play Store page or an app-install listing and the task was not to use Play Store, press Back ONCE, inspect the screen again, and do not tap the same link/ad again. If Play Store or the same unwanted page appears again, stop with ask_user and briefly state which screen is blocking progress. Never loop repeatedly between an app and Play Store.
+If the target screen is already open and the requested action is complete, return done. If the same action fails twice or the screen does not change after two attempts, stop and ask for the specific help needed; do not keep tapping randomly.
+Use type_text only when a text field is visibly focused and only for ordinary task text, never passwords, API keys, OTPs, payment details, or private information. Do not make purchases, accept subscriptions, send messages, delete content, or confirm sensitive actions. Never claim success unless the action result or next screen confirms it. Never output a normal conversational answer; the user-facing UI should show action steps only.
+For done use {"action":"done","text":"short completion status","reason":"confirmed by screen"}. For ask_user use {"action":"ask_user","text":"specific screen or choice needed","reason":"why progress is paused"}.
 User task: ${userTask}
 Step: ${step} of 60
 Visible screen text:
 ${screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
-Rules: act only on visible labels. Never invent buttons. Do not enter passwords, API keys, payment details, verification codes, or personal secrets. Do not make purchases, send messages, delete content, or accept paid subscriptions. If unclear or unsafe, use ask_user. If complete, use done. Choose one small action at a time.
 """.trimIndent()
                     val raw = requestGeminiText(key, chosenModel, instruction)
                     val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value ?: throw IllegalStateException("Gemini did not return a valid action JSON.")
