@@ -936,6 +936,17 @@ class MainActivity : ComponentActivity() {
                         refreshAdminClaim(user)
                         showAccountBanner(user)
                         status.text = "Signed in successfully"
+                        val profile = hashMapOf<String, Any>(
+                            "email" to (user.email ?: emailValue),
+                            "displayName" to (user.displayName ?: ""),
+                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                        )
+                        firestore?.collection("users")?.document(user.uid)
+                            ?.set(profile, SetOptions.merge())
+                            ?.addOnFailureListener { profileError ->
+                                status.text = "Signed in; profile sync failed: " + (profileError.message ?: "check Firestore rules")
+                                android.util.Log.e("FirebaseAuth", "Email sign-in profile sync failed", profileError)
+                            }
                     }.addOnFailureListener { error ->
                         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = true
                         status.text = "Sign-in failed: " + (error.message ?: "check email and password")
