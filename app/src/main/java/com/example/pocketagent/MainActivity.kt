@@ -21,6 +21,16 @@ import android.widget.ArrayAdapter
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.CustomCredential
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.auth.FirebaseAuthException
+import kotlinx.coroutines.launch
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.firebase.FirebaseApp
@@ -36,7 +46,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var model: Spinner
     private lateinit var modeSpinner: Spinner
@@ -749,6 +759,52 @@ class MainActivity : Activity() {
             .setPositiveButton("OK", null).show()
     }
 
+    private fun startGoogleCredentialSignIn() {
+        val auth = firebaseAuth
+        if (auth == null || firestore == null) { status.text = "Google sign-in needs Firebase configuration"; return }
+        val clientIdResource = resources.getIdentifier("default_web_client_id", "string", packageName)
+        if (clientIdResource == 0) { status.text = "Missing default_web_client_id. Check google-services.json."; return }
+        lifecycleScope.launch {
+            try {
+                val option = GetGoogleIdOption.Builder().setServerClientId(getString(clientIdResource)).setFilterByAuthorizedAccounts(false).build()
+                val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+                val result = CredentialManager.create(this@MainActivity).getCredential(this@MainActivity, request)
+                val credential = result.credential
+                if (credential !is CustomCredential || credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    status.text = "Google returned an unsupported credential type"
+                    android.util.Log.e("GoogleAuth", "Unexpected credential type: " + credential.javaClass.name)
+                    return@launch
+                }
+                val googleToken = GoogleIdTokenCredential.createFrom(credential.data)
+                val firebaseCredential = GoogleAuthProvider.getCredential(googleToken.idToken, null)
+                auth.signInWithCredential(firebaseCredential).addOnSuccessListener { authResult ->
+                    val user = authResult.user
+                    if (user == null) { status.text = "Google sign-in returned no Firebase user"; return@addOnSuccessListener }
+                    welcomeDialog?.dismiss(); welcomeDialog = null
+                    refreshAdminClaim(user); showAccountBanner(user); status.text = "Signed in with Google"
+                    val profile = hashMapOf<String, Any>("displayName" to (user.displayName ?: googleToken.displayName ?: "Pocket Agent user"), "email" to (user.email ?: googleToken.id), "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp())
+                    firestore?.collection("users")?.document(user.uid)?.set(profile, SetOptions.merge())?.addOnFailureListener { error ->
+                        status.text = "Signed in; profile sync failed: " + (error.message ?: "check Firestore rules")
+                        android.util.Log.e("GoogleAuth", "Profile sync failed", error)
+                    }
+                }.addOnFailureListener { error ->
+                    val code = (error as? FirebaseAuthException)?.errorCode ?: error.javaClass.simpleName
+                    status.text = "Firebase sign-in failed [" + code + "]: " + (error.message ?: "unknown error")
+                    android.util.Log.e("GoogleAuth", "Firebase sign-in failed [" + code + "]", error)
+                    AlertDialog.Builder(this@MainActivity).setTitle("Google sign-in failed").setMessage("Error: " + code + "\n" + (error.message ?: "No details") + "\nCheck Web Client ID, Google provider, package name, and APK SHA-1.").setPositiveButton("OK", null).show()
+                }
+            } catch (error: GetCredentialException) {
+                val code = error.javaClass.simpleName
+                status.text = "Google sign-in failed [" + code + "]: " + (error.message ?: "no details")
+                android.util.Log.e("GoogleAuth", "Credential Manager failed [" + code + "]", error)
+                AlertDialog.Builder(this@MainActivity).setTitle("Google sign-in didn't finish").setMessage("Credential Manager error: " + code + "\n" + (error.message ?: "No details") + "\nIf cancelled, try again; otherwise check Google provider and Web Client ID.").setPositiveButton("OK", null).show()
+            } catch (error: Exception) {
+                val code = error.javaClass.simpleName
+                status.text = "Google sign-in failed [" + code + "]: " + (error.message ?: "no details")
+                android.util.Log.e("GoogleAuth", "Unexpected Google sign-in error [" + code + "]", error)
+            }
+        }
+    }
     private fun showWelcomeGate() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -760,26 +816,7 @@ class MainActivity : Activity() {
         }
         val password = field("Password · at least 6 characters", true)
         val googleSignInButton = actionButton("Continue with Google", Color.WHITE, ink).apply {
-            setOnClickListener {
-                if (firebaseAuth == null || firestore == null) {
-                    status.text = "Google sign-in needs the owner's Firebase configuration"
-                } else {
-                    val clientIdResource = resources.getIdentifier("default_web_client_id", "string", packageName)
-                    if (clientIdResource == 0) {
-                        status.text = "Add a Web OAuth client in Firebase Console, then rebuild with google-services.json"
-                    } else {
-                        try {
-                            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                                .requestIdToken(getString(clientIdResource))
-                                .requestEmail()
-                                .build()
-                            startActivityForResult(GoogleSignIn.getClient(this@MainActivity, options).signInIntent, 7413)
-                        } catch (error: Exception) {
-                            status.text = "Could not start Google sign-in: " + (error.message ?: "unknown error")
-                        }
-                    }
-                }
-            }
+            setOnClickListener { startGoogleCredentialSignIn() }
         }
         panel.addView(googleSignInButton, margins(bottom = 10))
         val setupHelpButton = actionButton("Firebase setup help", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
