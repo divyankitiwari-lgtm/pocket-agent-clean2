@@ -1,6 +1,5 @@
 package com.example.pocketagent
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
@@ -39,9 +38,6 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -466,83 +462,6 @@ class MainActivity : ComponentActivity() {
     private fun localModelFile(): File = File(filesDir, "pocket-agent-local-model.task")
 
     @Deprecated("Use document picker")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 7413) {
-            if (resultCode != RESULT_OK || data == null) {
-                status.text = "Google sign-in was cancelled or did not return an account."
-                AlertDialog.Builder(this)
-                    .setTitle("Google sign-in didn't finish")
-                    .setMessage("Google returned without signing you in. If you selected your account and came back here, check the Firebase Google provider and the SHA-1 certificate for this exact APK. Try again after checking the setup.")
-                    .setPositiveButton("OK", null)
-                    .show()
-                return
-            }
-            try {
-                val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
-                val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-                firebaseAuth?.signInWithCredential(credential)
-                    ?.addOnSuccessListener { result ->
-                        val user = result.user
-                        if (user == null) {
-                            status.text = "Google sign-in returned no Firebase user"
-                            return@addOnSuccessListener
-                        }
-                        welcomeDialog?.dismiss()
-                        welcomeDialog = null
-                        refreshAdminClaim(user)
-                        showAccountBanner(user)
-                        status.text = "Signed in with Google"
-                        val profile = hashMapOf<String, Any>(
-                            "displayName" to (user.displayName ?: account.displayName ?: "Pocket Agent user"),
-                            "email" to (user.email ?: account.email.orEmpty()),
-                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
-                        )
-                        firestore?.collection("users")?.document(user.uid)
-                            ?.set(profile, SetOptions.merge())
-                            ?.addOnFailureListener { error ->
-                                status.text = "Google sign-in succeeded; profile sync failed: " + (error.message ?: "check Firestore rules")
-                            }
-                    }
-                    ?.addOnFailureListener { error ->
-                        val message = "Firebase Google sign-in failed: " + (error.message ?: "check provider setup")
-                        status.text = message
-                        AlertDialog.Builder(this)
-                            .setTitle("Google sign-in failed")
-                            .setMessage(message + "\n\nCheck that Google is enabled in Firebase Authentication and that the SHA-1 certificate for this APK is registered in Firebase.")
-                            .setPositiveButton("OK", null)
-                            .show()
-                    }
-            } catch (error: Exception) {
-                val message = "Google sign-in failed: " + (error.message ?: "check Firebase OAuth setup")
-                status.text = message
-                AlertDialog.Builder(this)
-                    .setTitle("Google sign-in failed")
-                    .setMessage(message)
-                    .setPositiveButton("OK", null)
-                    .show()
-            }
-            return
-        }
-        if (requestCode != 7412 || resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        status.text = "Importing local model…"
-        Thread {
-            try {
-                contentResolver.openInputStream(uri).use { input ->
-                    if (input == null) throw IllegalStateException("Could not read selected model file.")
-                    localModelFile().outputStream().use { output -> input.copyTo(output) }
-                }
-                runOnUiThread {
-                    status.text = "Local model imported · " + (localModelFile().length() / (1024 * 1024)) + " MB"
-                    logCommunication("LOCAL MODEL", "Imported model file to app-private storage.")
-                }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "Model import failed: " + (e.message ?: "unknown error") }
-            }
-        }.start()
-    }
-
     private fun generateLocalAi(prompt: String): String {
         val options = com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions.builder()
             .setModelPath(localModelFile().absolutePath)
