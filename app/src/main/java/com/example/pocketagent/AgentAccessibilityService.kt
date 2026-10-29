@@ -285,9 +285,18 @@ class AgentAccessibilityService : AccessibilityService() {
         try { candidates.addAll(root.findAccessibilityNodeInfosByText(target)) } catch (_: Exception) { }
         fun collectMatches(node: AccessibilityNodeInfo?, depth: Int) {
             if (node == null || depth > 24 || candidates.size > 160) return
-            val label = normalizeLabel(node.text ?: node.contentDescription)
-            if (label.isNotBlank() && label == wanted &&
-                candidates.none { it.boundsInScreen().sameBounds(node.boundsInScreen()) }) candidates.add(node)
+            // Match both visible text and content descriptions. Some custom app controls expose
+            // one in text and the other in contentDescription, and labels may include extra words.
+            val labels = listOf(node.text, node.contentDescription)
+                .mapNotNull { it?.toString() }
+                .map(::normalizeLabel)
+                .filter { it.isNotBlank() }
+            val matches = labels.any { label ->
+                label == wanted || label.contains(wanted) || (wanted.length >= 5 && wanted.contains(label))
+            }
+            if (matches && candidates.none { it.boundsInScreen().sameBounds(node.boundsInScreen()) }) {
+                candidates.add(node)
+            }
             for (i in 0 until node.childCount) collectMatches(node.getChild(i), depth + 1)
         }
         collectMatches(root, 0)
