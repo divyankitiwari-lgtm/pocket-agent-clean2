@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a deterministic 100,000-example JARVIS planning bootstrap dataset.
+"""Generate a deterministic 10,000,000-example JARVIS planning bootstrap dataset.
 
 All rows are synthetic. They teach high-level skill/tool selection, not app-specific
 coordinates or private account access. Review and augment before production use.
@@ -206,10 +206,13 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default="data")
-    parser.add_argument("--train-minimum", type=int, default=100_000)
+    parser.add_argument("--train-minimum", type=int, default=10_000_000)
+    parser.add_argument("--validation-count", type=int, default=1_000_000)
     args = parser.parse_args()
-    if args.train_minimum < 100_000:
-        raise SystemExit("JARVIS bootstrap requires at least 100,000 training examples.")
+    if args.train_minimum < 10_000_000:
+        raise SystemExit("JARVIS bootstrap requires at least 10,000,000 training examples.")
+    if args.validation_count < 1:
+        raise SystemExit("Validation count must be positive.")
 
     train_rows, val_rows = [], []
     serial = 0
@@ -220,13 +223,32 @@ def main() -> None:
         candidates = list(combinations)
         rng = random.Random(20261104 + len(skill))
         rng.shuffle(candidates)
-        # Each capability contributes exactly 13,750 candidates. Hold out 1,250
-        # per capability so the final split is exactly 100k train + 10k validation.
-        selected = candidates[:13_750]
-        for local_idx, (intent, phrase, target, context) in enumerate(selected):
+        # Expand base templates with deterministic scenario constraints.
+        # This creates unique synthetic prompts, not 10M human demonstrations.
+        train_per_skill = args.train_minimum // len(SPECS)
+        val_per_skill = args.validation_count // len(SPECS)
+        total_per_skill = train_per_skill + val_per_skill
+        modifiers = [
+            "preserve the current project state", "prefer reversible changes",
+            "verify the final screen or generated output", "report blockers honestly",
+            "avoid assuming a tap or save succeeded", "use visible controls and documented APIs",
+            "avoid requesting secrets or credentials", "ask before irreversible actions",
+            "keep the user informed about permission limits", "do not modify unrelated files",
+            "work only with the selected project or account", "retain a copy before editing",
+            "stop when a required permission is unavailable", "explain assumptions before proceeding",
+            "minimise unnecessary navigation", "keep the result easy to review",
+            "check that the intended target is still selected", "summarise what changed",
+            "use a safe draft before publishing", "finish the requested task before refinements",
+        ]
+        for local_idx in range(total_per_skill):
+            intent, phrase, target, context = candidates[local_idx % len(candidates)]
+            cycle = local_idx // len(candidates)
+            m1 = modifiers[(cycle * 7 + local_idx) % len(modifiers)]
+            m2 = modifiers[(cycle * 11 + local_idx // 3) % len(modifiers)]
+            scenario = f"Scenario constraints: {m1}; {m2}; scenario variant {cycle + 1}."
             serial += 1
-            row = make_row(skill, intent, target, phrase, context, serial)
-            if local_idx % 11 == 0:
+            row = make_row(skill, intent, target, phrase, f"{context} {scenario}", serial)
+            if local_idx < val_per_skill:
                 val_rows.append(row)
             else:
                 train_rows.append(row)
@@ -248,7 +270,7 @@ def main() -> None:
         "validation_examples": len(val_rows),
         "skills": sorted(SPECS.keys()),
         "seed": 20261104,
-        "note": "Candidate examples only; audit quality and evaluate before release.",
+        "note": "10M-scale synthetic template expansion; unique prompts do not imply semantic diversity. Human audit and held-out evaluation are mandatory.",
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
