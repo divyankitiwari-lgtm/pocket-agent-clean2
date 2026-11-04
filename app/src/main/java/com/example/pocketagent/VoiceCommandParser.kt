@@ -27,8 +27,8 @@ object VoiceCommandParser {
             return Parsed(Kind.RESUME)
         }
         if (automationActive && (
-                value.contains("how is it going") || value.contains("how are you doing") ||
-                value.contains("what are you doing") || value.contains("what problem") ||
+                value.contains("how is it going") || value.contains("how is that going") || value.contains("how are you doing") ||
+                value.contains("what are you doing") || value.contains("what problem") || value.contains("which problem") || value.contains("what issue") ||
                 value.contains("what is the problem") || value.contains("status") ||
                 value.contains("progress") || value.contains("where are you")
             )) return Parsed(Kind.STATUS)
