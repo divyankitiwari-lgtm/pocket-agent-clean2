@@ -272,7 +272,13 @@ class MainActivity : Activity() {
         content.addView(plansCard, margins(bottom = 14))
 
         val setup = card(white)
-        setup.addView(sectionTitle("AI ENGINE · LEGACY PROVIDER SETUP"))
+        setup.addView(sectionTitle("TEMPORARY AI ENGINE SETTINGS"))
+        setup.addView(TextView(this).apply {
+            text = "Developer-only fallback configuration. The final JARVIS experience is intended to use a managed model and will not ask ordinary users to paste provider API keys."
+            textSize = 12f
+            setTextColor(muted)
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }, margins(bottom = 10))
         setup.addView(label("Temporary developer configuration · Gemini API key"))
         apiKey = field("Paste your Gemini API key once", true).apply {
             setText(securePrefs.getString("gemini_api_key", "").orEmpty())
@@ -367,6 +373,18 @@ class MainActivity : Activity() {
             setTextColor(muted)
             setLineSpacing(dp(2).toFloat(), 1f)
         })
+        setup.visibility = if (prefs.getBoolean("show_legacy_engine_settings", false)) View.VISIBLE else View.GONE
+        val engineSettingsToggle = actionButton(
+            if (setup.visibility == View.VISIBLE) "Hide temporary AI engine settings" else "Advanced AI engine settings · temporary",
+            Color.rgb(239, 237, 255), accent
+        )
+        engineSettingsToggle.setOnClickListener {
+            val expanded = setup.visibility != View.VISIBLE
+            setup.visibility = if (expanded) View.VISIBLE else View.GONE
+            prefs.edit().putBoolean("show_legacy_engine_settings", expanded).apply()
+            engineSettingsToggle.text = if (expanded) "Hide temporary AI engine settings" else "Advanced AI engine settings · temporary"
+        }
+        content.addView(engineSettingsToggle, margins(bottom = 8))
         content.addView(setup, margins(bottom = 14))
 
         val taskCard = card(white)
@@ -388,10 +406,11 @@ class MainActivity : Activity() {
             buttonTintList = android.content.res.ColorStateList.valueOf(accent)
         }
         taskCard.addView(useScreen, margins(bottom = 12))
-        askButton = actionButton("Ask cloud AI", accent, white)
-        askButton.setOnClickListener { sendGeminiRequest() }
-        taskCard.addView(askButton, margins(bottom = 8))
-        val agentButton = actionButton("▶ Run task", Color.rgb(30, 32, 48), Color.WHITE)
+        askButton = actionButton("Ask cloud AI", accent, white).apply {
+            visibility = View.GONE
+            setOnClickListener { sendGeminiRequest() }
+        }
+        val agentButton = actionButton("▶ Start JARVIS", accent, white)
         agentButton.setOnClickListener { startAutonomousAgent(agentButton) }
         taskCard.addView(agentButton, margins(bottom = 8))
         content.addView(taskCard, margins(bottom = 14))
@@ -399,7 +418,7 @@ class MainActivity : Activity() {
         val answerCard = card(white)
         answerCard.addView(sectionTitle("LIVE ACTION LOG"))
         answerView = TextView(this).apply {
-            text = "When the agent runs, this area records actions such as “Opened YouTube”, “Tapped Search”, and “Scrolled down”. Gemini text answers are hidden."
+            text = "JARVIS records each attempted action and its result here. It checks the next screen before reporting that a task is complete."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -1208,12 +1227,12 @@ class MainActivity : Activity() {
         val userTask = task.text.toString().trim()
         val shareScreenText = useScreen.isChecked
         if (userTask.isBlank()) { status.text = "Describe your task first"; return }
-        if (mode == 0 && key.isBlank()) { status.text = "Add an API key for cloud mode, or choose a local mode"; return }
+        if (mode == 0 && key.isBlank()) { status.text = "Cloud engine not configured · open Advanced AI engine settings or choose an offline mode"; return }
         if (mode == 1 && !localModelFile().exists()) { status.text = "Import a compatible .task local model first"; return }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
-            status.text = "Stopping agent…"; agentButton.text = "▶ Start autonomous agent"; return
+            status.text = "Stopping JARVIS…"; agentButton.text = "▶ Start JARVIS"; return
         }
         agentRunning = true
         prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false)
@@ -1360,7 +1379,7 @@ Previous action result: ${lastResult.take(500)}
                 agentRunning = false
                 prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
                     .putString("current_agent_status", "● JARVIS · Stopped").putString("pending_action", "").apply()
-                runOnUiThread { agentButton.text = "▶ Run task" }
+                runOnUiThread { agentButton.text = "▶ Start JARVIS" }
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
         }.start()
