@@ -13,6 +13,7 @@
         android:icon="@drawable/ic_pocket_agent"
         android:roundIcon="@drawable/ic_pocket_agent"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".ConnectionsActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
