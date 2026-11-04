@@ -1023,6 +1023,10 @@ Keep the answer short and useful. If the question asks for progress, explain the
             .setNegativeButton("Sign in", null).create()
         welcomeDialog = dialog
         dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
+            dialog.window?.setLayout(-1, -1)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(105, 228, 219))
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(220, 238, 243))
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val displayName = name.text.toString().trim()
                 val emailValue = email.text.toString().trim()
