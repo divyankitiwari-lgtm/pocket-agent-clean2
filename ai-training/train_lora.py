@@ -47,8 +47,8 @@ def main() -> None:
         raise SystemExit("Dataset files missing. Run generate_dataset.py first.")
     with train_path.open(encoding="utf-8") as f:
         train_count = sum(1 for line in f if line.strip())
-    if train_count < 100_000:
-        raise SystemExit(f"Refusing to train: expected >=100,000 examples, found {train_count}.")
+    if train_count < 10_000_000:
+        raise SystemExit(f"Refusing to train: expected >=10,000,000 examples, found {train_count}.")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=False)
     if tokenizer.pad_token is None:
