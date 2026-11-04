@@ -667,7 +667,7 @@ class MainActivity : Activity() {
             text = "Plan controls are test previews only; they do not grant paid entitlements."
             textSize = 12f; setTextColor(muted)
         }, margins(bottom = 8))
-        panel.addView(actionButton("Preview Free / Premium / Max", Color.rgb(238, 235, 255), accent).apply {
+        panel.addView(actionButton("View plans and usage", Color.rgb(238, 235, 255), accent).apply {
             setOnClickListener { showPlanOptions() }
         }, margins(bottom = 8))
         panel.addView(actionButton("Report a bug", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
@@ -768,11 +768,14 @@ class MainActivity : Activity() {
 
     private fun refreshAdminClaim(user: FirebaseUser?) {
         // Clear any cached role before checking the currently signed-in user's token.
-        prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
+        prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
         if (user == null) return
         user.getIdToken(true).addOnSuccessListener { token ->
             val admin = token.claims["admin"] == true
-            prefs.edit().putBoolean("admin_verified_by_firebase", admin).apply()
+            val claimedPlan = token.claims["plan"] as? String
+            val verifiedPlan = if (admin) "Admin" else if (claimedPlan == "Pro" || claimedPlan == "Max") claimedPlan else "Free"
+            prefs.edit().putBoolean("admin_verified_by_firebase", admin)
+                .putString("verified_plan", verifiedPlan).apply()
             if (admin) runOnUiThread { showAdminBanner() }
         }.addOnFailureListener {
             prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
@@ -786,28 +789,16 @@ class MainActivity : Activity() {
     }
 
     private fun currentPlan(): String {
-        // Only verified admins may change a local test preview. Normal accounts remain
-        // on Free until a trusted backend supplies a verified paid entitlement.
-        if (!isAdminAccount()) return "Free"
-        val chosen = prefs.getString("selected_plan", "Free").orEmpty()
-        return if (chosen in listOf("Free", "Premium", "Max")) chosen else "Free"
+        if (isAdminAccount()) return "Admin"
+        val verified = prefs.getString("verified_plan", "Free").orEmpty()
+        return if (verified == "Pro" || verified == "Max") verified else "Free"
     }
 
     private fun showPlanOptions() {
-        if (isAdminAccount()) {
-            val adminPlans = arrayOf("Free · preview 60-step limit", "Premium · preview 4-hour session", "Max · preview no app-imposed step cap")
-            AlertDialog.Builder(this).setTitle("Admin · plan preview")
-                .setSingleChoiceItems(adminPlans, listOf("Free", "Premium", "Max").indexOf(currentPlan())) { dialog, which ->
-                    val selected = listOf("Free", "Premium", "Max")[which]
-                    prefs.edit().putString("selected_plan", selected).apply()
-                    status.text = "Admin preview switched to $selected · no paid entitlement changed"
-                    dialog.dismiss()
-                }.setNegativeButton("Cancel", null).show()
-            return
-        }
-        AlertDialog.Builder(this).setTitle("Pocket Agent plans")
-            .setMessage("Your account currently uses the Free tier (60 steps per task). Paid plans are not available in this build because secure Google Play Billing and server-verified entitlements have not been configured. Selecting a plan here must never unlock paid limits.")
-            .setPositiveButton("OK", null).show()
+        val details = "FREE · ₹0\\n500 successful actions per day\\n\\nPRO · ₹199/month (proposed)\\n5,000 successful actions per day\\n\\nMAX · ₹499/month (proposed)\\nUp to 2 billion theoretical actions/day, subject to fair-use, rate, and infrastructure safeguards\\n\\nADMIN · private access\\nUnlimited for accounts with an authorised Firebase admin claim.\\n\\nPaid billing is not enabled in this build. These are proposed launch prices; paid limits will unlock only after secure billing and server-verified entitlements are configured."
+        AlertDialog.Builder(this).setTitle("JARVIS plans")
+            .setMessage(details)
+            .setPositiveButton("Got it", null).show()
     }
 
     private fun showWelcomeGate() {
