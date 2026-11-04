@@ -1418,10 +1418,20 @@ Previous action result: ${lastResult.take(500)}
                     val reason = command.optString("reason", "")
                     prefs.edit().putString("current_agent_status", "● Step " + step + " · " + action).apply()
                     logCommunication("AGENT STEP " + step, "Action: " + action + " " + textValue + "\\nReason: " + reason)
-                    runOnUiThread { answerView.append("\\n" + step + ". " + actionLabel(action, textValue)); status.text = "Working · step " + step + " · " + action }
+                    runOnUiThread { answerView.append("\\n" + step + ". " + actionLabel(action, textValue)); setOrbState(LiquidOrbView.State.AUTOMATING, "WORKING · STEP " + step) }
+                    speakThroughVoiceService(actionLabel(action, textValue))
                     when (action) {
-                        "done" -> { runOnUiThread { answerView.append("\\n✓ Task completed"); status.text = "Agent completed" }; break }
-                        "ask_user" -> { runOnUiThread { answerView.append("\\n⏸ Needs your input: " + textValue); status.text = "Paused · user input required" }; break }
+                        "done" -> {
+                            prefs.edit().putString("current_agent_status", "● JARVIS · Completed").apply()
+                            runOnUiThread { answerView.append("\\n✓ Task completed"); setOrbState(LiquidOrbView.State.SPEAKING, "TASK COMPLETE") }
+                            break
+                        }
+                        "ask_user" -> {
+                            prefs.edit().putBoolean("agent_paused", true).putString("current_agent_status", "● JARVIS · Needs your input").apply()
+                            speakThroughVoiceService(textValue)
+                            runOnUiThread { answerView.append("\\n⏸ Needs your input: " + textValue); setOrbState(LiquidOrbView.State.PAUSED, "WAITING FOR YOUR INSTRUCTION") }
+                            break
+                        }
                         "open_app", "tap_text", "type_text", "scroll_down", "scroll_up", "back", "home" -> {
                             // Reset the previous result so a timeout cannot be mistaken for a successful action.
                             prefs.edit().putString("last_action_result", "")
@@ -1459,15 +1469,16 @@ Previous action result: ${lastResult.take(500)}
                 runOnUiThread { answerView.append("\\n⚠ Agent stopped: " + (e.message ?: "request failed")); status.text = "Agent stopped · check connection or model settings" }
             } finally {
                 agentRunning = false
+                val finalStatus = prefs.getString("current_agent_status", "").orEmpty()
                 prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
-                    .putString("current_agent_status", "● JARVIS · Stopped").putString("pending_action", "").apply()
+                    .putString("current_agent_status", if (finalStatus.contains("Completed", true)) "● JARVIS · Completed" else "● JARVIS · Stopped")
+                    .putString("pending_action", "").apply()
                 runOnUiThread {
                     agentButton.text = "▶ Start JARVIS"
                     if (prefs.getBoolean("voice_session_requested", false)) setOrbState(LiquidOrbView.State.LISTENING, "LISTENING · READY FOR YOUR NEXT COMMAND")
                     else setOrbState(LiquidOrbView.State.IDLE, "TASK ENDED · TAP THE ORB TO TALK")
                 }
-                val endStatus = prefs.getString("current_agent_status", "").orEmpty()
-                speakThroughVoiceService(if (endStatus.contains("complete", true)) "The task is complete." else "The automation has stopped.")
+                speakThroughVoiceService(if (finalStatus.contains("Completed", true)) "The task is complete." else "The automation has stopped.")
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
         }.start()
