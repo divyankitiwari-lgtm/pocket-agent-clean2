@@ -173,8 +173,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 val result = when (action) {
                     "tap_text" -> {
                         if (value.isEmpty()) "Tap skipped: target text was empty"
-                        else if (clickNodeByText(rootInActiveWindow, value)) "Tapped visible control: $value"
-                        else "Could not find/click visible control: $value"
+                        else clickNodeByText(rootInActiveWindow, value)
                     }
                     "type_text" -> {
                         val target = findFocusedEditable(rootInActiveWindow)
@@ -278,65 +277,78 @@ class AgentAccessibilityService : AccessibilityService() {
             ?.replace(Regex("[^a-z0-9]+"), " ")?.trim()
             ?.replace(Regex("\\s+"), " ").orEmpty()
 
-    private fun clickNodeByText(root: AccessibilityNodeInfo?, target: String): Boolean {
-        if (root == null || target.isBlank()) return false
+    private fun clickNodeByText(root: AccessibilityNodeInfo?, target: String): String {
+        if (root == null || target.isBlank()) return "Tap failed: no active accessibility window"
         val wanted = normalizeLabel(target)
-        val candidates = mutableListOf<AccessibilityNodeInfo>()
-        try { candidates.addAll(root.findAccessibilityNodeInfosByText(target)) } catch (_: Exception) { }
+        data class Match(val node: AccessibilityNodeInfo, val exact: Boolean)
+        data class TapTarget(val node: AccessibilityNodeInfo, val bounds: android.graphics.Rect, val area: Long, val exact: Boolean)
+        val candidates = mutableListOf<Match>()
+
         fun collectMatches(node: AccessibilityNodeInfo?, depth: Int) {
-            if (node == null || depth > 24 || candidates.size > 160) return
-            // Match both visible text and content descriptions. Some custom app controls expose
-            // one in text and the other in contentDescription, and labels may include extra words.
-            val labels = listOf(node.text, node.contentDescription)
-                .mapNotNull { it?.toString() }
-                .map(::normalizeLabel)
-                .filter { it.isNotBlank() }
-            val matches = labels.any { label ->
-                label == wanted || label.contains(wanted) || (wanted.length >= 5 && wanted.contains(label))
-            }
-            if (matches && candidates.none { it.boundsInScreen().sameBounds(node.boundsInScreen()) }) {
-                candidates.add(node)
+            if (node == null || depth > 28 || candidates.size >= 180) return
+            if (!node.isPassword) {
+                val labels = listOf(node.text, node.contentDescription)
+                    .mapNotNull { it?.toString() }
+                    .map(::normalizeLabel)
+                    .filter { it.isNotBlank() }
+                val matched = labels.firstOrNull { label ->
+                    label == wanted || label.contains(wanted) || (wanted.length >= 4 && wanted.contains(label))
+                }
+                if (matched != null && candidates.none { it.node.boundsInScreen().sameBounds(node.boundsInScreen()) }) {
+                    candidates.add(Match(node, matched == wanted))
+                }
             }
             for (i in 0 until node.childCount) collectMatches(node.getChild(i), depth + 1)
         }
         collectMatches(root, 0)
-        val screenArea = resources.displayMetrics.widthPixels.toLong() * resources.displayMetrics.heightPixels.toLong()
-        val minTarget = dp(48)
-        data class TapTarget(val node: AccessibilityNodeInfo, val bounds: android.graphics.Rect, val area: Long)
+        if (candidates.isEmpty()) return "Tap failed: no visible control matched '$target'"
+
+        val metrics = resources.displayMetrics
+        val screenArea = metrics.widthPixels.toLong() * metrics.heightPixels.toLong()
+        val minTarget = dp(40)
         val clickableTargets = mutableListOf<TapTarget>()
-        val fallbackTargets = mutableListOf<android.graphics.Rect>()
-        for (candidate in candidates) {
-            var current: AccessibilityNodeInfo? = candidate
+        val fallbackTargets = mutableListOf<TapTarget>()
+        for (match in candidates) {
+            var current: AccessibilityNodeInfo? = match.node
             var depth = 0
-            while (current != null && depth++ < 8) {
+            while (current != null && depth++ < 10) {
                 val bounds = android.graphics.Rect()
                 current.getBoundsInScreen(bounds)
                 val area = bounds.width().toLong() * bounds.height().toLong()
                 val visible = bounds.right > 0 && bounds.bottom > 0 &&
-                    bounds.left < resources.displayMetrics.widthPixels &&
-                    bounds.top < resources.displayMetrics.heightPixels
-                val reasonable = visible && bounds.width() >= minTarget &&
-                    bounds.height() >= minTarget && area > 0 && area < screenArea * 3 / 4
-                if (reasonable) {
-                    if (fallbackTargets.none { it == bounds }) fallbackTargets.add(android.graphics.Rect(bounds))
-                    if (current.isClickable && current.isEnabled) clickableTargets.add(TapTarget(current, android.graphics.Rect(bounds), area))
+                    bounds.left < metrics.widthPixels && bounds.top < metrics.heightPixels
+                val usable = visible && bounds.width() >= minTarget && bounds.height() >= minTarget &&
+                    area > 0 && area < screenArea * 3 / 4
+                if (usable) {
+                    val candidate = TapTarget(current, android.graphics.Rect(bounds), area, match.exact)
+                    if (fallbackTargets.none { it.bounds == bounds }) fallbackTargets.add(candidate)
+                    if (current.isClickable && current.isEnabled &&
+                        clickableTargets.none { it.bounds == bounds }) clickableTargets.add(candidate)
                 }
                 current = current.parent
             }
         }
-        // Prefer the smallest valid clickable node instead of a large clickable ancestor.
-        val bestClickable = clickableTargets.minByOrNull { it.area }
-        if (bestClickable != null && bestClickable.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+
+        val bestClickable = clickableTargets.sortedWith(
+            compareByDescending<TapTarget> { it.exact }.thenBy { it.area }
+        ).firstOrNull()
+        if (bestClickable != null &&
+            bestClickable.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             showTapMarker(bestClickable.bounds)
-            return true
+            return "Accessibility click accepted: '$target'; checking the next screen"
         }
-        // Apps without semantic click actions get a center gesture on the smallest valid visible target.
-        val centerTarget = fallbackTargets.minByOrNull { it.width().toLong() * it.height().toLong() }
-        if (centerTarget != null && tapCenter(centerTarget)) {
-            showTapMarker(centerTarget)
-            return true
+
+        // If semantic click is unavailable, use the centre of the nearest reasonable
+        // visible target and wait for Android's gesture callback before reporting dispatch.
+        val fallback = fallbackTargets.sortedWith(
+            compareByDescending<TapTarget> { it.exact }.thenBy { it.area }
+        ).firstOrNull()
+        if (fallback != null) {
+            val dispatch = tapCenter(fallback.bounds, target)
+            if (dispatch) return "Tap gesture queued: '$target'"
+            return "Tap failed: Android rejected the gesture for '$target'"
         }
-        return false
+        return "Tap failed: matched '$target' but no safe visible tap target was available"
     }
 
     private fun AccessibilityNodeInfo.boundsInScreen(): android.graphics.Rect =
@@ -344,12 +356,28 @@ class AgentAccessibilityService : AccessibilityService() {
 
     private fun android.graphics.Rect.sameBounds(other: android.graphics.Rect): Boolean = this == other
 
-    private fun tapCenter(bounds: android.graphics.Rect): Boolean {
-        val x = bounds.centerX().toFloat()
-        val y = bounds.centerY().toFloat()
+    private fun tapCenter(bounds: android.graphics.Rect, target: String): Boolean {
+        val metrics = resources.displayMetrics
+        val x = bounds.centerX().coerceIn(1, metrics.widthPixels - 2).toFloat()
+        val y = bounds.centerY().coerceIn(1, metrics.heightPixels - 2).toFloat()
         val path = Path().apply { moveTo(x, y); lineTo(x + 1f, y + 1f) }
-        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 80)
-        return dispatchGesture(android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 120))
+            .build()
+        return dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                showTapMarker(bounds)
+                getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
+                    .putString("last_action_result", "Tap gesture completed: '$target'; verify the next screen")
+                    .apply()
+            }
+
+            override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
+                    .putString("last_action_result", "Tap gesture cancelled: '$target'")
+                    .apply()
+            }
+        }, handler)
     }
 
     private fun showTapMarker(bounds: android.graphics.Rect) {
@@ -357,25 +385,20 @@ class AgentAccessibilityService : AccessibilityService() {
             if (bounds.width() < dp(12) || bounds.height() < dp(12)) return
             val marker = object : View(this) {
                 private val outline = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.rgb(255, 176, 0)
+                    color = Color.rgb(105, 86, 220)
                     style = android.graphics.Paint.Style.STROKE
-                    strokeWidth = dp(3).toFloat()
+                    strokeWidth = dp(2).toFloat()
                 }
                 private val centerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.rgb(255, 176, 0)
+                    color = Color.rgb(105, 86, 220)
                     style = android.graphics.Paint.Style.FILL
                 }
                 override fun onDraw(canvas: android.graphics.Canvas) {
                     super.onDraw(canvas)
-                    val inset = dp(2).toFloat()
-                    canvas.drawRoundRect(inset, inset, width - inset, height - inset, dp(12).toFloat(), dp(12).toFloat(), outline)
                     val cx = width / 2f
                     val cy = height / 2f
-                    val radius = dp(5).toFloat()
-                    canvas.drawCircle(cx, cy, radius, centerPaint)
-                    val cross = dp(12).toFloat()
-                    canvas.drawLine(cx - cross, cy, cx + cross, cy, outline)
-                    canvas.drawLine(cx, cy - cross, cx, cy + cross, outline)
+                    canvas.drawCircle(cx, cy, dp(15).toFloat(), outline)
+                    canvas.drawCircle(cx, cy, dp(3).toFloat(), centerPaint)
                 }
             }.apply {
                 setBackgroundColor(Color.TRANSPARENT)
@@ -384,8 +407,8 @@ class AgentAccessibilityService : AccessibilityService() {
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             try { tapMarker?.let { wm.removeView(it) } } catch (_: Exception) { }
             // Small visual marker around the tap center; actual gesture coordinates remain unchanged.
-            val markerWidth = dp(60)
-            val markerHeight = dp(40)
+            val markerWidth = dp(38)
+            val markerHeight = dp(38)
             val params = WindowManager.LayoutParams(
                 markerWidth,
                 markerHeight,
