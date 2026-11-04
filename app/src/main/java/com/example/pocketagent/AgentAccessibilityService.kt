@@ -19,7 +19,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Screen-control layer for Pocket Agent.
+ * Screen-control layer for JARVIS.
  * Actions only run after the user explicitly starts an agent session.
  * Screen labels stay local until the foreground agent sends them to Gemini.
  */
@@ -46,7 +46,7 @@ class AgentAccessibilityService : AccessibilityService() {
             return
         }
         if (agentTab != null) {
-            agentStatus?.text = prefs.getString("current_agent_status", "● Pocket Agent · Running").orEmpty()
+            agentStatus?.text = prefs.getString("current_agent_status", "● JARVIS · Running").orEmpty()
             agentPauseButton?.text = if (prefs.getBoolean("agent_paused", false)) "Resume" else "Pause"
             return
         }
@@ -60,7 +60,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 elevation = dp(8).toFloat()
             }
             val label = TextView(this).apply {
-                text = prefs.getString("current_agent_status", "● Pocket Agent · Running").orEmpty()
+                text = prefs.getString("current_agent_status", "● JARVIS · Running").orEmpty()
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.WHITE)
@@ -78,7 +78,7 @@ class AgentAccessibilityService : AccessibilityService() {
                     val paused = prefs.getBoolean("agent_paused", false)
                     prefs.edit().putBoolean("agent_paused", !paused)
                         .putString("pending_action", "")
-                        .putString("current_agent_status", if (paused) "● Pocket Agent · Resuming" else "Ⅱ Pocket Agent · Paused")
+                        .putString("current_agent_status", if (paused) "● JARVIS · Resuming" else "Ⅱ JARVIS · Paused")
                         .apply()
                     text = if (paused) "Pause" else "Resume"
                 }
