@@ -1211,9 +1211,9 @@ Keep the answer short and useful. If the question asks for progress, explain the
         if (::screenPreview.isInitialized) refreshScreenText()
         if (::status.isInitialized) {
             status.text = when {
-                agentRunning && prefs.getBoolean("agent_paused", false) -> "Agent paused · open Live automation for details"
-                agentRunning -> "Agent running · open Live automation for details"
-                firebaseAuth?.currentUser != null -> "ACCOUNT · ${firebaseAuth?.currentUser?.email ?: "Signed-in user"} · ${currentPlan().uppercase(Locale.US)}"
+                agentRunning && prefs.getBoolean("agent_paused", false) -> "TASK PAUSED · SAY CONTINUE"
+                agentRunning -> "JARVIS IS WORKING · ASK FOR PROGRESS BY VOICE"
+                firebaseAuth?.currentUser != null -> "TAP THE ORB TO TALK"
                 prefs.getBoolean("accessibility_connected", false) -> "Accessibility service connected"
                 else -> "Ready · describe a task to JARVIS"
             }
