@@ -834,12 +834,81 @@ class MainActivity : Activity() {
     }
 
     private fun showPlanOptions() {
-        val details = "FREE · ₹0\\n500 successful actions per day\\n\\nPRO · ₹199/month (proposed)\\n5,000 successful actions per day\\n\\nMAX · ₹499/month (proposed)\\nUp to 2 billion theoretical actions/day, subject to fair-use, rate, and infrastructure safeguards\\n\\nADMIN · private access\\nUnlimited for accounts with an authorised Firebase admin claim.\\n\\nPaid billing is not enabled in this build. These are proposed launch prices; paid limits will unlock only after secure billing and server-verified entitlements are configured."
-        AlertDialog.Builder(this).setTitle("JARVIS plans")
-            .setMessage(details)
-            .setPositiveButton("Got it", null).show()
+        val current = currentPlan()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(8))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(250, 251, 255), Color.rgb(239, 241, 255))
+            ).apply { cornerRadius = dp(26).toFloat() }
+        }
+        panel.addView(TextView(this).apply {
+            text = "Your current JARVIS plan"
+            textSize = 14f
+            setTextColor(muted)
+            setPadding(dp(4), dp(4), dp(4), dp(14))
+        })
+        fun addPlan(name: String, price: String, description: String, active: Boolean) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    if (active) intArrayOf(Color.rgb(244, 242, 255), Color.WHITE)
+                    else intArrayOf(Color.WHITE, Color.rgb(247, 249, 255))
+                ).apply {
+                    cornerRadius = dp(22).toFloat()
+                    setStroke(dp(1), if (active) accent else Color.rgb(225, 229, 243))
+                }
+                elevation = dp(2).toFloat()
+            }
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(TextView(this).apply {
+                text = name
+                textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(ink)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            header.addView(TextView(this).apply {
+                text = if (active) "CURRENT PLAN" else price
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (active) accent else muted)
+            })
+            item.addView(header, margins(bottom = 7))
+            item.addView(TextView(this).apply {
+                text = description
+                textSize = 12f
+                setTextColor(muted)
+                setLineSpacing(dp(2).toFloat(), 1f)
+            })
+            panel.addView(item, margins(bottom = 10))
+        }
+        addPlan("Free", "₹0", "500 successful actions per day · Local AI included", current == "Free")
+        addPlan("Pro", "₹199 / month", "Proposed: 5,000 successful actions per day. Billing is not active yet.", current == "Pro")
+        addPlan("Max", "₹499 / month", "Proposed higher-usage tier. Billing and server-side limits are not active yet.", current == "Max")
+        if (isAdminAccount()) {
+            addPlan("Admin", "PRIVATE", "Verified admin role · internal testing access", true)
+        } else {
+            addPlan("Admin", "PRIVATE", "Reserved for accounts with a verified Firebase admin claim.", false)
+        }
+        panel.addView(TextView(this).apply {
+            text = "Paid plans are previews only. No payment will be taken, and tapping a plan cannot grant paid access until secure billing is implemented."
+            textSize = 11f
+            setTextColor(muted)
+            setPadding(dp(4), dp(2), dp(4), dp(8))
+        })
+        val scroll = ScrollView(this).apply { addView(panel) }
+        AlertDialog.Builder(this)
+            .setTitle("JARVIS plans")
+            .setView(scroll)
+            .setPositiveButton("Done", null)
+            .show()
     }
-
     private fun showWelcomeGate() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
