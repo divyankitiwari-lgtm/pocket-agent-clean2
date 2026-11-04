@@ -1103,15 +1103,23 @@ class MainActivity : Activity() {
     private fun card(color: Int): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(18), dp(18), dp(18))
+        // Lightweight frosted-glass treatment compatible with Android 10.
+        // Translucent layered surfaces, a bright hairline border and soft elevation
+        // create the glass effect without relying on newer RenderEffect APIs.
         background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            if (color == Color.WHITE) intArrayOf(Color.rgb(255, 255, 255), Color.rgb(246, 248, 255))
-            else intArrayOf(blendWithWhite(color), color)
+            if (color == Color.WHITE) intArrayOf(
+                Color.argb(242, 255, 255, 255),
+                Color.argb(226, 245, 247, 255)
+            ) else intArrayOf(
+                Color.argb(236, Color.red(blendWithWhite(color)), Color.green(blendWithWhite(color)), Color.blue(blendWithWhite(color))),
+                Color.argb(224, Color.red(color), Color.green(color), Color.blue(color))
+            )
         ).apply {
             cornerRadius = dp(26).toFloat()
-            setStroke(dp(1), Color.rgb(225, 229, 245))
+            setStroke(dp(1), Color.argb(205, 255, 255, 255))
         }
-        elevation = dp(5).toFloat()
+        elevation = dp(7).toFloat()
     }
 
     private fun margins(bottom: Int = 0): LinearLayout.LayoutParams =
@@ -1141,9 +1149,9 @@ class MainActivity : Activity() {
         setHintTextColor(muted)
         setPadding(dp(14), dp(12), dp(14), dp(12))
         background = GradientDrawable().apply {
-            setColor(Color.rgb(245, 245, 247))
-            cornerRadius = dp(14).toFloat()
-            setStroke(dp(1), Color.rgb(225, 225, 230))
+            setColor(Color.argb(224, 255, 255, 255))
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), Color.rgb(226, 230, 244))
         }
         if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         else inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
