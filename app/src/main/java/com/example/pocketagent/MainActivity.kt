@@ -333,7 +333,7 @@ class MainActivity : Activity() {
                 prefs.edit().putInt("agent_mode", position).apply()
                 if (::askButton.isInitialized) askButton.text = when (position) { 1 -> "Ask local AI"; 2 -> "Plan with local rules"; else -> "Ask cloud AI" }
                 if (::status.isInitialized) status.text = when (position) {
-                    1 -> if (localModelFile().exists()) "Local model found · no API key needed" else "Import a compatible .task model for Local AI"
+                    1 -> if (localModelFile().exists()) "Gemma ready · no API key needed" else "Gemma downloads automatically on first use · no API key needed"
                     2 -> "Local Rules mode · no API or model required"
                     else -> "Cloud mode selected · API key required"
                 }
@@ -347,7 +347,7 @@ class MainActivity : Activity() {
         }
         setup.addView(localModelButton, margins(bottom = 8))
         setup.addView(TextView(this).apply {
-            text = "Local AI requires a compatible MediaPipe LLM .task model downloaded separately. Local Rules needs no model or API but is less flexible."
+            text = "JARVIS downloads its Gemma model automatically the first time Local AI is used. No API key or manual model import is required. The one-time download is large and needs a stable internet connection."
             textSize = 12f
             setTextColor(muted)
         }, margins(bottom = 8))
@@ -392,14 +392,11 @@ class MainActivity : Activity() {
             Color.rgb(25, 75, 125)
         )
         localSetupButton.setOnClickListener {
-            setup.visibility = View.VISIBLE
-            prefs.edit().putBoolean("show_legacy_engine_settings", true).apply()
             modeSpinner.setSelection(1)
-            engineSettingsToggle.text = "Hide temporary AI engine settings"
             status.text = if (localModelFile().exists()) {
-                "Gemma model file imported · select Local AI mode to use it"
+                "Gemma is ready · JARVIS will use it locally without an API key"
             } else {
-                "Choose Import local AI model and select your downloaded Gemma .task file"
+                "Gemma will download automatically the first time you ask JARVIS. No API key or manual import needed."
             }
         }
         content.addView(localSetupButton, margins(bottom = 8))
@@ -1302,7 +1299,6 @@ class MainActivity : Activity() {
         val shareScreenText = useScreen.isChecked
         if (userTask.isBlank()) { status.text = "Describe your task first"; return }
         if (mode == 0 && key.isBlank()) { status.text = "Cloud engine not configured · open Advanced AI engine settings or choose an offline mode"; return }
-        if (mode == 1 && !localModelFile().exists()) { status.text = "Import a compatible .task local model first"; return }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
