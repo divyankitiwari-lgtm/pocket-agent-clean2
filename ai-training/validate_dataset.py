@@ -48,7 +48,7 @@ def read_rows(path: Path) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data")
-    parser.add_argument("--minimum-train", type=int, default=100_000)
+    parser.add_argument("--minimum-train", type=int, default=10_000_000)
     args = parser.parse_args()
     root = Path(args.data_dir)
     train = read_rows(root / "train.jsonl")
