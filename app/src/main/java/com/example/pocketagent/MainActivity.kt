@@ -333,7 +333,7 @@ class MainActivity : Activity() {
                 prefs.edit().putInt("agent_mode", position).apply()
                 if (::askButton.isInitialized) askButton.text = when (position) { 1 -> "Ask local AI"; 2 -> "Plan with local rules"; else -> "Ask cloud AI" }
                 if (::status.isInitialized) status.text = when (position) {
-                    1 -> if (localModelFile().exists()) "Gemma ready · no API key needed" else "Gemma downloads automatically on first use · no API key needed"
+                    1 -> if (localModelFile().exists()) "Gemma ready · no API key needed" else "Gemma included in this APK · no API key needed"
                     2 -> "Local Rules mode · no API or model required"
                     else -> "Cloud mode selected · API key required"
                 }
@@ -593,56 +593,33 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun ensureGemmaModelDownloaded(): File {
+    private fun ensureGemmaModelBundled(): File {
         val target = localModelFile()
         if (target.isFile && target.length() > 100_000_000L) return target
-
-        val url = URL("https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task?download=true")
-        val temp = File(filesDir, "gemma3-1b-it-int4.task.download")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            instanceFollowRedirects = true
-            connectTimeout = 30000
-            readTimeout = 120000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "JARVIS-Android/1.0")
-        }
+        val temp = File(filesDir, "gemma3-1b-it-int4.task.copying")
         try {
-            connection.connect()
-            val code = connection.responseCode
-            check(code in 200..299) { "Gemma download failed (HTTP $code)." }
-            val expected = connection.contentLengthLong
-            runOnUiThread { status.text = "Downloading Gemma AI model… this is a one-time download." }
-            connection.inputStream.use { input ->
+            assets.open("gemma3-1b-it-int4.task").use { input ->
                 temp.outputStream().buffered().use { output ->
                     val buffer = ByteArray(1024 * 1024)
-                    var total = 0L
-                    var count: Int
-                    while (input.read(buffer).also { count = it } >= 0) {
-                        if (count == 0) continue
-                        output.write(buffer, 0, count)
-                        total += count
-                        if (expected > 0L && total % (20L * 1024 * 1024) < buffer.size) {
-                            val percent = (total * 100 / expected).toInt().coerceIn(0, 99)
-                            runOnUiThread { status.text = "Downloading Gemma AI model… $percent%" }
-                        }
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (count > 0) output.write(buffer, 0, count)
                     }
                 }
             }
-            check(temp.length() > 100_000_000L) { "Downloaded model is incomplete; please retry with a stable connection." }
+            check(temp.length() > 100_000_000L) { "Bundled Gemma model is missing or incomplete in this APK." }
             if (target.exists()) target.delete()
-            check(temp.renameTo(target)) { "Could not move downloaded Gemma model into app storage." }
-            runOnUiThread { status.text = "Gemma model ready · running on this device" }
+            check(temp.renameTo(target)) { "Could not prepare bundled Gemma model in app storage." }
+            runOnUiThread { status.text = "Bundled Gemma model ready · running locally" }
             return target
         } catch (error: Exception) {
             temp.delete()
             throw error
-        } finally {
-            connection.disconnect()
         }
     }
-
     private fun generateLocalAi(prompt: String): String {
-        val modelFile = ensureGemmaModelDownloaded()
+        val modelFile = ensureGemmaModelBundled()
         val engine = gemmaEngine ?: GemmaEngine(applicationContext, modelFile).also {
             gemmaEngine = it
             logCommunication("LOCAL AI", "Gemma runtime loaded from app-private model storage.")
@@ -1473,7 +1450,7 @@ Previous action result: ${lastResult.take(500)}
         }
         if (userTask.isEmpty()) {
             status.text = "Missing task"
-            answerView.text = "Type what you want Gemini to help with, then tap Ask Gemini."
+            answerView.text = "Type what you want Gemini to help with, then tap Ask JARVIS."
             return
         }
 
