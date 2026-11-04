@@ -364,7 +364,7 @@ class AgentAccessibilityService : AccessibilityService() {
         val gesture = android.accessibilityservice.GestureDescription.Builder()
             .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 120))
             .build()
-        return dispatchGesture(gesture, object : GestureResultCallback() {
+        return dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
                 showTapMarker(bounds)
                 getSharedPreferences("pocket_agent", MODE_PRIVATE).edit()
