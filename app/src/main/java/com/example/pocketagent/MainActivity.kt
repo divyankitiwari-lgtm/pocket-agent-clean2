@@ -563,16 +563,29 @@ class MainActivity : Activity() {
         return try { engine.generateResponse(prompt) } finally { engine.close() }
     }
 
+    private fun extractRequestedApp(userTask: String): String {
+        val match = Regex(
+            """\\b(?:open|launch|start|switch to|go to)\\s+(?:the\\s+)?([A-Za-z0-9][A-Za-z0-9 ._&'’-]{0,48}?)(?=\\s+(?:and|then|so|inside|where)\\b|[,;.!?]|$)""",
+            RegexOption.IGNORE_CASE
+        ).find(userTask) ?: return ""
+        var app = match.groupValues[1].trim().trimEnd('.', '?', '!')
+        app = app.replace(Regex("^(my|the)\\s+", RegexOption.IGNORE_CASE), "")
+        app = app.replace(Regex("\\s+app$", RegexOption.IGNORE_CASE), "").trim()
+        val generic = setOf("app", "my app", "editing", "video editing", "editing app",
+            "video editing app", "my editing app", "my video editing app", "browser", "editor")
+        if (app.lowercase() in generic || app.length < 2) return ""
+        return app
+    }
+
     private fun localRulePlan(userTask: String, screen: String, previousResult: String): String {
         val lower = screen.lowercase()
         val taskLower = userTask.lowercase()
         fun command(action: String, text: String, reason: String) =
             JSONObject().put("action", action).put("text", text).put("reason", reason).toString()
-        if (screen.isBlank() || lower.contains("pocket agent")) {
-            val app = Regex("(?:open|launch|switch to|go to)\\s+([A-Za-z0-9][A-Za-z0-9 &_.-]{1,48})", RegexOption.IGNORE_CASE)
-                .find(userTask)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', '?', '!') ?: ""
-            if (app.isNotBlank()) return command("open_app", app, "Opening the app requested in the task.")
-            return command("ask_user", "Open the app you want to automate, then run the task again.", "The current screen does not expose a target app yet.")
+        if (screen.isBlank() || lower.contains("jarvis")) {
+            val app = extractRequestedApp(userTask)
+            if (app.isNotBlank()) return command("open_app", app, "Opening the app explicitly named in the task.")
+            return command("ask_user", "Which installed app should I open?", "The task does not identify a specific app.")
         }
         if (previousResult.contains("Could not find", true) || previousResult.contains("failed", true)) {
             return command("ask_user", "The last action failed. Check the screen and choose the next step.", previousResult.take(180))
@@ -590,6 +603,33 @@ class MainActivity : Activity() {
         }
         if (taskLower.contains("scroll") || screen.length > 1200) return command("scroll_down", "", "No matching label; inspect lower screen content.")
         return command("ask_user", "I couldn't match a safe button. Tell me which visible button to use.", "Local rules won't guess randomly.")
+    }
+
+    private fun todayInIndia(): String {
+        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        formatter.timeZone = TimeZone.getTimeZone("Asia/Kolkata")
+        return formatter.format(Date())
+    }
+
+    private fun dailyStepsUsed(): Long {
+        val today = todayInIndia()
+        if (prefs.getString("usage_day", "") != today) {
+            prefs.edit().putString("usage_day", today).putLong("daily_steps_used", 0L).apply()
+        }
+        return prefs.getLong("daily_steps_used", 0L)
+    }
+
+    private fun recordSuccessfulStep(result: String) {
+        val success = result.startsWith("Opened app:", true) ||
+            result.startsWith("Tapped visible control:", true) ||
+            result.startsWith("Tap gesture completed:", true) ||
+            result.startsWith("Accessibility click accepted:", true) ||
+            result.startsWith("Scrolled down", true) ||
+            result.startsWith("Scrolled up", true) ||
+            result.startsWith("Pressed Back", true) ||
+            result.startsWith("Pressed Home", true) ||
+            result.startsWith("Entered text", true)
+        if (success) prefs.edit().putLong("daily_steps_used", dailyStepsUsed() + 1L).apply()
     }
 
     private fun confirmLogout() {
@@ -1157,34 +1197,33 @@ class MainActivity : Activity() {
             try {
                 var lastResult = ""
                 var step = 1
-                val sessionStartedAt = System.currentTimeMillis()
-                while (agentRunning &&
-                    (currentPlan() != "Free" || step <= 60) &&
-                    (currentPlan() != "Premium" || System.currentTimeMillis() - sessionStartedAt < 4L * 60L * 60L * 1000L)) {
+                var launchAttempted = false
+                val dailyLimit = when (currentPlan()) {
+                    "Free" -> 500L
+                    "Pro" -> 5_000L
+                    "Max" -> 2_000_000_000L
+                    else -> Long.MAX_VALUE
+                }
+                while (agentRunning && dailyStepsUsed() < dailyLimit) {
                     while (agentRunning && prefs.getBoolean("agent_paused", false)) {
                         Thread.sleep(200)
                     }
                     if (!agentRunning || !prefs.getBoolean("session_active", false)) break
                     var screen = prefs.getString("latest_screen_text", "").orEmpty()
                     if (screen.isBlank()) { runOnUiThread { status.text = "Waiting for readable screen text · open target app" }; Thread.sleep(1200); screen = prefs.getString("latest_screen_text", "").orEmpty() }
-                    // Deterministic launch bootstrap: don't rely on Gemini to discover that it must leave Pocket Agent.
-                    // This prevents an empty/stale screen snapshot from producing idle or unrelated actions.
-                    val taskNamesQuizAndEarn = userTask.contains("Quiz and Earn", ignoreCase = true)
+                    // Generic app launch bootstrap: no target app or workflow is hard-coded.
+                    val requestedApp = extractRequestedApp(userTask)
                     val screenLooksLikeAgent = screen.isBlank() ||
-                        (screen.contains("POCKET AGENT", ignoreCase = true) &&
-                         !screen.contains("Mega Offer", ignoreCase = true) &&
-                         !screen.contains("Quiz and Earn", ignoreCase = true))
-                    val alreadyTriedLaunch = lastResult.contains("Opened app: Quiz and Earn", ignoreCase = true) ||
-                        lastResult.contains("Could not find an installed app matching", ignoreCase = true) ||
-                        lastResult.contains("Open app failed", ignoreCase = true) ||
-                        lastResult.contains("No launcher activity", ignoreCase = true)
-                    if (taskNamesQuizAndEarn && screenLooksLikeAgent && !alreadyTriedLaunch) {
-                        val bootstrapAction = JSONObject().put("action", "open_app").put("text", "Quiz and Earn").toString()
+                        (screen.contains("JARVIS", ignoreCase = true) &&
+                         (requestedApp.isBlank() || !screen.contains(requestedApp, ignoreCase = true)))
+                    if (requestedApp.isNotBlank() && screenLooksLikeAgent && !launchAttempted) {
+                        launchAttempted = true
+                        val bootstrapAction = JSONObject().put("action", "open_app").put("text", requestedApp).toString()
                         prefs.edit().putString("last_action_result", "").putString("pending_action", bootstrapAction).apply()
-                        logCommunication("BOOTSTRAP", "Launching Quiz and Earn before asking Gemini to plan screen actions.")
+                        logCommunication("BOOTSTRAP", "Launching the app explicitly named by the user: " + requestedApp)
                         runOnUiThread {
-                            answerView.append("\\n" + step + ". Opening Quiz and Earn")
-                            status.text = "Opening Quiz and Earn…"
+                            answerView.append("\\n" + step + ". Opening " + requestedApp)
+                            status.text = "Opening " + requestedApp + "…"
                         }
                         var waitedForLaunch = 0
                         var launchResult = ""
@@ -1194,17 +1233,17 @@ class MainActivity : Activity() {
                             Thread.sleep(200)
                             waitedForLaunch += 200
                         }
-                        lastResult = launchResult.ifBlank { "No confirmation received from Accessibility Service while opening Quiz and Earn." }
+                        lastResult = launchResult.ifBlank { "No confirmation received from Accessibility Service while opening " + requestedApp + "." }
                         logCommunication("BOOTSTRAP RESULT", lastResult)
                         runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
                         Thread.sleep(1200)
                         screen = prefs.getString("latest_screen_text", "").orEmpty()
                     }
                     val instruction = """
-You are the silent planning engine for Pocket Agent, an Android UI-control agent. You do not chat with the user. Return ONLY one JSON object and nothing else:
+You are the silent planning engine for JARVIS, a general-purpose Android AI agent. You do not chat with the user. Return ONLY one JSON object and nothing else:
 {"action":"tap_text","text":"exact visible label","reason":"short internal reason"}
 Allowed actions: open_app, tap_text, type_text, scroll_down, scroll_up, back, home, done, ask_user.
-Plan one safe, small action from the current screen, then inspect the next screen. Prefer exact visible labels. BOOTSTRAP RULE: if visible screen text is empty, unreadable, or shows only Pocket Agent while the task names a target app, your first action MUST be {"action":"open_app","text":"<the exact app name from the task>","reason":"Target app is not open; launch it first"}. For this user's known workflow, the target app name is "Quiz and Earn". Do not choose done or ask_user before attempting to launch the named target app. If opening fails, use the action result to report the exact failure; do not silently claim the app is open. Use open_app only when the requested app is not already open. Never reopen an app just because a tap failed.
+Plan one safe, small action from the current screen, then inspect the next screen. Prefer exact visible labels. BOOTSTRAP RULE: if visible screen text is empty, unreadable, or shows only JARVIS while the task explicitly names an app, your first action MUST be {"action":"open_app","text":"<the exact app name from the task>","reason":"The requested app is not open; launch it first"}. Never assume a fixed target app. If the user says only "my app" or "my editing app" without naming an installed app, ask which app they mean. If opening fails, use the action result to report the exact failure; do not silently claim the app is open. Use open_app only when the requested app is not already open. Never reopen an app just because a tap failed.
 Use scroll_down/up when the required control is off-screen. If the screen is an unexpected Google Play Store page or an app-install listing and the task was not to use Play Store, press Back ONCE, inspect the screen again, and do not tap the same link/ad again. If Play Store or the same unwanted page appears again, stop with ask_user and briefly state which screen is blocking progress. Never loop repeatedly between an app and Play Store.
 If the target screen is already open and the requested action is complete, return done. If the same action fails twice or the screen does not change after two attempts, stop and ask for the specific help needed; do not keep tapping randomly.
 Use type_text only when a text field is visibly focused and only for ordinary task text, never passwords, API keys, OTPs, payment details, or private information. Do not make purchases, accept subscriptions, send messages, delete content, or confirm sensitive actions. Never claim success unless the action result or next screen confirms it. Never output a normal conversational answer; the user-facing UI should show action steps only.
@@ -1265,6 +1304,7 @@ Previous action result: ${lastResult.take(500)}
                                 waited += 200
                             }
                             lastResult = actionResult.ifBlank { "No confirmation received. Inspect the current screen and choose a different safe action if needed." }
+                            recordSuccessfulStep(lastResult)
                             runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
                             Thread.sleep(700)
                         }
@@ -1272,10 +1312,11 @@ Previous action result: ${lastResult.take(500)}
                     }
                     step++
                 }
-                if (agentRunning && currentPlan() == "Free" && step > 60) {
-                    runOnUiThread { answerView.append("\\n\\nFree plan limit reached (60 steps). Start a new task to continue."); status.text = "Free plan · 60-step limit reached" }
-                } else if (agentRunning && currentPlan() == "Premium" && System.currentTimeMillis() - sessionStartedAt >= 4L * 60L * 60L * 1000L) {
-                    runOnUiThread { answerView.append("\\n\\nPremium session limit reached (4 hours)."); status.text = "Premium · 4-hour session ended" }
+                if (agentRunning && dailyStepsUsed() >= dailyLimit) {
+                    runOnUiThread {
+                        answerView.append("\\n\\nDaily action allowance reached for the " + currentPlan() + " plan.")
+                        status.text = currentPlan() + " · daily action allowance reached"
+                    }
                 }
             } catch (e: Exception) {
                 val message = "Agent error: " + (e.message ?: "unknown error")
