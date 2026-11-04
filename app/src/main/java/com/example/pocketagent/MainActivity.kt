@@ -323,7 +323,7 @@ class MainActivity : Activity() {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modes).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            setSelection(prefs.getInt("agent_mode", 0).coerceIn(0, 2))
+            setSelection(prefs.getInt("agent_mode", 1).coerceIn(0, 2))
             background = rounded(Color.rgb(247, 247, 252), 16)
             setPadding(dp(10), dp(8), dp(10), dp(8))
         }
@@ -631,11 +631,56 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun generateLocalAi(prompt: String): String {
-        val modelFile = localModelFile()
-        check(modelFile.isFile && modelFile.length() > 1_000_000L) {
-            "Gemma model file is missing or incomplete. Import the .task file again."
+    private fun ensureGemmaModelDownloaded(): File {
+        val target = localModelFile()
+        if (target.isFile && target.length() > 100_000_000L) return target
+
+        val url = URL("https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task?download=true")
+        val temp = File(filesDir, "gemma3-1b-it-int4.task.download")
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = 30000
+            readTimeout = 120000
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "JARVIS-Android/1.0")
         }
+        try {
+            connection.connect()
+            val code = connection.responseCode
+            check(code in 200..299) { "Gemma download failed (HTTP $code)." }
+            val expected = connection.contentLengthLong
+            runOnUiThread { status.text = "Downloading Gemma AI model… this is a one-time download." }
+            connection.inputStream.use { input ->
+                temp.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(1024 * 1024)
+                    var total = 0L
+                    var count: Int
+                    while (input.read(buffer).also { count = it } >= 0) {
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        total += count
+                        if (expected > 0L && total % (20L * 1024 * 1024) < buffer.size) {
+                            val percent = (total * 100 / expected).toInt().coerceIn(0, 99)
+                            runOnUiThread { status.text = "Downloading Gemma AI model… $percent%" }
+                        }
+                    }
+                }
+            }
+            check(temp.length() > 100_000_000L) { "Downloaded model is incomplete; please retry with a stable connection." }
+            if (target.exists()) target.delete()
+            check(temp.renameTo(target)) { "Could not move downloaded Gemma model into app storage." }
+            runOnUiThread { status.text = "Gemma model ready · running on this device" }
+            return target
+        } catch (error: Exception) {
+            temp.delete()
+            throw error
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun generateLocalAi(prompt: String): String {
+        val modelFile = ensureGemmaModelDownloaded()
         val engine = gemmaEngine ?: GemmaEngine(applicationContext, modelFile).also {
             gemmaEngine = it
             logCommunication("LOCAL AI", "Gemma runtime loaded from app-private model storage.")
