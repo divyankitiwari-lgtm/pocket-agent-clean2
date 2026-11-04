@@ -323,7 +323,7 @@ class MainActivity : Activity() {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modes).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            setSelection(prefs.getInt("agent_mode", 1).coerceIn(0, 2))
+            setSelection(1)
             background = rounded(Color.rgb(247, 247, 252), 16)
             setPadding(dp(10), dp(8), dp(10), dp(8))
         }
