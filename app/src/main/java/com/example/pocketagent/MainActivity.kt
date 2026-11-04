@@ -473,19 +473,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (::planPill.isInitialized) updatePlanPill()
-        if (firebaseAuth?.currentUser != null && permissionDialog?.isShowing == true) {
-            val micGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val accessReady = prefs.getBoolean("accessibility_connected", false)
-            if (micGranted && accessReady) {
-                permissionDialog?.dismiss()
-                permissionDialog = null
-            }
-        }
-    }
-
     private fun localModelFile(): File = File(filesDir, "pocket-agent-local-model.task")
 
     @Deprecated("Use document picker")
@@ -1212,14 +1199,22 @@ Keep the answer short and useful. If the question asks for progress, explain the
 
     override fun onResume() {
         super.onResume()
+        if (::planPill.isInitialized) updatePlanPill()
         if (::screenPreview.isInitialized) refreshScreenText()
+        if (firebaseAuth?.currentUser != null && permissionDialog?.isShowing == true) {
+            val micGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val accessReady = prefs.getBoolean("accessibility_connected", false)
+            if (micGranted && accessReady) {
+                permissionDialog?.dismiss()
+                permissionDialog = null
+            }
+        }
         if (::status.isInitialized) {
             status.text = when {
                 agentRunning && prefs.getBoolean("agent_paused", false) -> "TASK PAUSED · SAY CONTINUE"
                 agentRunning -> "JARVIS IS WORKING · ASK FOR PROGRESS BY VOICE"
                 firebaseAuth?.currentUser != null -> "TAP THE ORB TO TALK"
-                prefs.getBoolean("accessibility_connected", false) -> "Accessibility service connected"
-                else -> "Ready · describe a task to JARVIS"
+                else -> "TAP THE ORB TO TALK"
             }
         }
     }
