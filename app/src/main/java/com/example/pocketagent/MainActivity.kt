@@ -733,6 +733,10 @@ class MainActivity : Activity() {
         val dialog = AlertDialog.Builder(this).setTitle("Report a bug").setView(form)
             .setNegativeButton("Cancel", null).setPositiveButton("Submit report", null).create()
         dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
+            dialog.window?.setLayout(-1, -1)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(111, 229, 219))
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(216, 236, 242))
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val titleValue = titleField.text.toString().trim()
                 val steps = stepsField.text.toString().trim()
@@ -915,7 +919,7 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         }
         val password = field("Password · at least 6 characters", true)
-        val googleSignInButton = actionButton("Continue with Google", Color.WHITE, ink).apply {
+        val googleSignInButton = actionButton("Continue with Google", Color.rgb(23, 35, 48), Color.rgb(235, 249, 250)).apply {
             setOnClickListener {
                 if (firebaseAuth == null || firestore == null) {
                     status.text = "Google sign-in needs the owner's Firebase configuration"
@@ -979,12 +983,17 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(muted)
         })
-        val dialog = AlertDialog.Builder(this).setTitle("Welcome to JARVIS")
-            .setMessage("Sign in with Google or email, or create an account. You can continue offline without a demo account.")
+        listOf(name, email, password).forEach { input ->
+            input.setTextColor(Color.rgb(235, 245, 248))
+            input.setHintTextColor(Color.rgb(130, 154, 168))
+            input.background = glassSurface(16)
+        }
+        panel.background = glassSurface(26)
+        val dialog = AlertDialog.Builder(this).setTitle("WELCOME BACK")
+            .setMessage("Sign in with Google or your email and password, or create your account.")
             .setView(panel)
             .setCancelable(false).setPositiveButton("Create account", null)
-            .setNegativeButton("Sign in", null)
-            .setNeutralButton("Continue offline", null).create()
+            .setNegativeButton("Sign in", null).create()
         welcomeDialog = dialog
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -1059,13 +1068,6 @@ class MainActivity : Activity() {
                         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = true
                         status.text = "Sign-in failed: " + (error.message ?: "check email and password")
                     }
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                dialog.dismiss()
-                status.text = if (firebaseAuth == null || firestore == null)
-                    "Offline mode · local rules and device automation remain available; cloud accounts and sync need Firebase setup."
-                else "Offline mode selected · no account is signed in and cloud sync is not active."
-                logCommunication("ACCOUNT", "Continued without signing in; no demo account was created.")
             }
         }
         dialog.show()
