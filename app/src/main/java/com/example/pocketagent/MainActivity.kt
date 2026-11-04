@@ -290,6 +290,7 @@ class MainActivity : Activity() {
             return
         }
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            prefs.edit().putBoolean("voice_session_requested", true).apply()
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 8821)
             return
         }
@@ -816,12 +817,10 @@ class MainActivity : Activity() {
             prefs.edit().putBoolean("admin_verified_by_firebase", admin)
                 .putString("verified_plan", verifiedPlan).apply()
             runOnUiThread {
-                val signedIn = firebaseAuth?.currentUser
-                if (signedIn != null) {
-                    val label = signedIn.displayName?.takeIf { it.isNotBlank() } ?: signedIn.email ?: "Signed-in user"
-                    status.text = "ACCOUNT · $label · ${verifiedPlan.uppercase(Locale.US)}"
+                updatePlanPill()
+                if (::status.isInitialized && !prefs.getBoolean("voice_session_requested", false)) {
+                    status.text = "TAP THE ORB TO TALK"
                 }
-                if (admin) showAdminBanner()
             }
         }.addOnFailureListener {
             prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
