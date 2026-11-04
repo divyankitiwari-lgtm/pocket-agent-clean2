@@ -156,7 +156,7 @@ class MainActivity : Activity() {
             val logScroll = ScrollView(this).apply { addView(logView) }
             panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(340)))
             val liveDialog = AlertDialog.Builder(this)
-                .setTitle("Pocket Agent · Live Activity")
+                .setTitle("JARVIS · Live Activity")
                 .setView(panel)
                 .setPositiveButton("Close", null)
                 .setNeutralButton("Clear log", null)
@@ -565,7 +565,7 @@ class MainActivity : Activity() {
 
     private fun extractRequestedApp(userTask: String): String {
         val match = Regex(
-            """\\b(?:open|launch|start|switch to|go to)\\s+(?:the\\s+)?([A-Za-z0-9][A-Za-z0-9 ._&'’-]{0,48}?)(?=\\s+(?:and|then|so|inside|where)\\b|[,;.!?]|$)""",
+            """\b(?:open|launch|start|switch to|go to)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._&'’-]{0,48}?)(?=\s+(?:and|then|so|inside|where)\b|[,;.!?]|$)""",
             RegexOption.IGNORE_CASE
         ).find(userTask) ?: return ""
         var app = match.groupValues[1].trim().trimEnd('.', '?', '!')
@@ -1241,7 +1241,7 @@ Use type_text only when a text field is visibly focused and only for ordinary ta
 For done use {"action":"done","text":"short completion status","reason":"confirmed by screen"}. For ask_user use {"action":"ask_user","text":"specific screen or choice needed","reason":"why progress is paused"}.
 User task: ${userTask}
 Current plan: ${currentPlan()}. Step number: ${step}.
-Plan rules: Free has a 60-step app limit; Premium has a 4-hour session limit; Max has NO app-imposed step-count limit. For Max, continue beyond step 60 when the task is still in progress. Do not stop just because the step number is high. Stop only when the task is confirmed complete, the user needs to decide something, a safety pause is required, or a real technical/API error prevents continuing.
+Plan rules: Free allows 500 successful actions/day; Pro allows 5,000/day; Max has a theoretical ceiling of 2 billion/day subject to fair-use and infrastructure safeguards; verified Admin accounts are unlimited. Do not stop just because the step number is high. Stop when the task is confirmed complete, the user must decide something, a safety pause is required, or a real technical/API error prevents continuing.
 Visible screen text:
 ${if (mode == 0 && !shareScreenText) "[OMITTED: screen-text sharing is disabled. Do not guess visible controls; ask the user to enable screen sharing or choose a local mode.]" else screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
@@ -1290,11 +1290,15 @@ Previous action result: ${lastResult.take(500)}
                             var actionResult = ""
                             while (agentRunning && prefs.getBoolean("session_active", false) && waited < 6000) {
                                 actionResult = prefs.getString("last_action_result", "").orEmpty()
-                                if (actionResult.isNotBlank()) break
+                                if (actionResult.isNotBlank() && !actionResult.startsWith("Tap gesture queued:", true)) break
                                 Thread.sleep(200)
                                 waited += 200
                             }
-                            lastResult = actionResult.ifBlank { "No confirmation received. Inspect the current screen and choose a different safe action if needed." }
+                            lastResult = if (actionResult.startsWith("Tap gesture queued:", true)) {
+                                "Tap gesture confirmation timed out. The screen will be rechecked before another attempt."
+                            } else actionResult.ifBlank {
+                                "No confirmation received. Inspect the current screen and choose a different safe action if needed."
+                            }
                             recordSuccessfulStep(lastResult)
                             runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
                             Thread.sleep(700)
