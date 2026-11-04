@@ -303,8 +303,13 @@ class AgentAccessibilityService : AccessibilityService() {
                     .mapNotNull { it?.toString() }
                     .map(::normalizeLabel)
                     .filter { it.isNotBlank() }
+                // Prefer exact/whole-phrase matches. Avoid reverse substring matching:
+                // a short label such as "Allow" must not match an unrelated longer target.
                 val matched = labels.firstOrNull { label ->
-                    label == wanted || label.contains(wanted) || (wanted.length >= 4 && wanted.contains(label))
+                    label == wanted ||
+                        label.startsWith("$wanted ") ||
+                        label.endsWith(" $wanted") ||
+                        label.contains(" $wanted ")
                 }
                 if (matched != null && candidates.none { it.node.boundsInScreen().sameBounds(node.boundsInScreen()) }) {
                     candidates.add(Match(node, matched == wanted))
@@ -352,7 +357,9 @@ class AgentAccessibilityService : AccessibilityService() {
 
         // If semantic click is unavailable, use the centre of the nearest reasonable
         // visible target and wait for Android's gesture callback before reporting dispatch.
-        val fallback = fallbackTargets.sortedWith(
+        // If ACTION_CLICK is unavailable, prefer the smallest usable clickable
+        // ancestor's centre before falling back to a non-clickable text/container node.
+        val fallback = (clickableTargets.ifEmpty { fallbackTargets }).sortedWith(
             compareByDescending<TapTarget> { it.exact }.thenBy { it.area }
         ).firstOrNull()
         if (fallback != null) {
