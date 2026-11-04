@@ -384,6 +384,23 @@ class MainActivity : Activity() {
             prefs.edit().putBoolean("show_legacy_engine_settings", expanded).apply()
             engineSettingsToggle.text = if (expanded) "Hide temporary AI engine settings" else "Advanced AI engine settings · temporary"
         }
+        val localSetupButton = actionButton(
+            "Set up Gemma on this device",
+            Color.rgb(230, 244, 255),
+            Color.rgb(25, 75, 125)
+        )
+        localSetupButton.setOnClickListener {
+            setup.visibility = View.VISIBLE
+            prefs.edit().putBoolean("show_legacy_engine_settings", true).apply()
+            modeSpinner.setSelection(1)
+            engineSettingsToggle.text = "Hide temporary AI engine settings"
+            status.text = if (localModelFile().exists()) {
+                "Gemma model file imported · select Local AI mode to use it"
+            } else {
+                "Choose Import local AI model and select your downloaded Gemma .task file"
+            }
+        }
+        content.addView(localSetupButton, margins(bottom = 8))
         content.addView(engineSettingsToggle, margins(bottom = 8))
         content.addView(setup, margins(bottom = 14))
 
