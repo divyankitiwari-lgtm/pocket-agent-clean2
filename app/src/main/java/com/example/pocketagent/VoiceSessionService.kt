@@ -197,7 +197,11 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
                     handler.post {
                         speaking = false
                         if (prefs.getBoolean("voice_session_requested", false)) {
-                            broadcastState("LISTENING")
+                            broadcastState(when {
+                                prefs.getBoolean("agent_paused", false) -> "PAUSED"
+                                prefs.getBoolean("session_active", false) -> "AUTOMATING"
+                                else -> "LISTENING"
+                            })
                             startListening()
                         }
                     }
@@ -205,7 +209,14 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
                 override fun onError(utteranceId: String?) {
                     handler.post {
                         speaking = false
-                        if (prefs.getBoolean("voice_session_requested", false)) startListening()
+                        if (prefs.getBoolean("voice_session_requested", false)) {
+                            broadcastState(when {
+                                prefs.getBoolean("agent_paused", false) -> "PAUSED"
+                                prefs.getBoolean("session_active", false) -> "AUTOMATING"
+                                else -> "LISTENING"
+                            })
+                            startListening()
+                        }
                     }
                 }
             })
@@ -218,8 +229,14 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
         }
     }
 
-    override fun onReadyForSpeech(params: android.os.Bundle?) { listening = true }
-    override fun onBeginningOfSpeech() { listening = true }
+    override fun onReadyForSpeech(params: android.os.Bundle?) {
+        listening = true
+        if (!prefs.getBoolean("session_active", false)) broadcastState("LISTENING")
+    }
+    override fun onBeginningOfSpeech() {
+        listening = true
+        if (!prefs.getBoolean("session_active", false)) broadcastState("LISTENING")
+    }
     override fun onRmsChanged(rmsdB: Float) {}
     override fun onBufferReceived(buffer: ByteArray?) {}
     override fun onEndOfSpeech() { listening = false }
