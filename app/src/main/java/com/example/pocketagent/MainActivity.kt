@@ -340,17 +340,6 @@ class MainActivity : Activity() {
             }
         }
         setup.addView(modeSpinner, margins(bottom = 8))
-        val localModelButton = actionButton("Import local AI model (.task)", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125))
-        localModelButton.setOnClickListener {
-            val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
-            startActivityForResult(pick, 7412)
-        }
-        setup.addView(localModelButton, margins(bottom = 8))
-        setup.addView(TextView(this).apply {
-            text = "JARVIS downloads its Gemma model automatically the first time Local AI is used. No API key or manual model import is required. The one-time download is large and needs a stable internet connection."
-            textSize = 12f
-            setTextColor(muted)
-        }, margins(bottom = 8))
         setup.addView(label("Model"))
         model = Spinner(this).apply {
             val modelNames = listOf(
@@ -375,33 +364,9 @@ class MainActivity : Activity() {
             setTextColor(muted)
             setLineSpacing(dp(2).toFloat(), 1f)
         })
-        setup.visibility = if (prefs.getBoolean("show_legacy_engine_settings", false)) View.VISIBLE else View.GONE
-        val engineSettingsToggle = actionButton(
-            if (setup.visibility == View.VISIBLE) "Hide temporary AI engine settings" else "Advanced AI engine settings · temporary",
-            Color.rgb(239, 237, 255), accent
-        )
-        engineSettingsToggle.setOnClickListener {
-            val expanded = setup.visibility != View.VISIBLE
-            setup.visibility = if (expanded) View.VISIBLE else View.GONE
-            prefs.edit().putBoolean("show_legacy_engine_settings", expanded).apply()
-            engineSettingsToggle.text = if (expanded) "Hide temporary AI engine settings" else "Advanced AI engine settings · temporary"
-        }
-        val localSetupButton = actionButton(
-            "Set up Gemma on this device",
-            Color.rgb(230, 244, 255),
-            Color.rgb(25, 75, 125)
-        )
-        localSetupButton.setOnClickListener {
-            modeSpinner.setSelection(1)
-            status.text = if (localModelFile().exists()) {
-                "Gemma is ready · JARVIS will use it locally without an API key"
-            } else {
-                "Gemma will download automatically the first time you ask JARVIS. No API key or manual import needed."
-            }
-        }
-        content.addView(localSetupButton, margins(bottom = 8))
-        content.addView(engineSettingsToggle, margins(bottom = 8))
-        content.addView(setup, margins(bottom = 14))
+        setup.visibility = View.GONE
+        modeSpinner.setSelection(1)
+        prefs.edit().putInt("agent_mode", 1).putBoolean("show_legacy_engine_settings", false).apply()
 
         val taskCard = card(white)
         taskCard.addView(sectionTitle("YOUR TASK"))
