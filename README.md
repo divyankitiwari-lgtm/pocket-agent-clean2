@@ -1,54 +1,66 @@
-# Pocket Agent Clean 2
+# JARVIS — Unified Android Agent
 
-> **Status:** experimental Android build. The dashboard uses a translucent glass-inspired card system, and the accessibility target selector prefers smaller valid targets. Firebase rules are a starter template only; Firebase Auth/Firestore client flows remain **inactive until the owner configures the Firebase client file, enables providers, and publishes tested rules**.
+> **Status:** active rebuild branch. This is an experimental Android agent, not a production-ready general AI operating system. The rebuild is being developed on rebuild/jarvis-unified-agent; the default main branch is kept separate.
 
-A clean Android starter for a Gemini-powered screen assistant, designed to build an APK through GitHub Actions so the project can be managed from a phone.
+JARVIS is designed as one agent with a shared reasoning core and multiple capabilities: Android app control, coding, video editing, research, websites/design, files, and data work. Users should describe an outcome once; JARVIS should select the right capability and tools. Capability modules must only be labelled active after their execution paths are implemented and tested.
 
-## Current features
-- Native Kotlin Android dashboard with a colorful glass-inspired card system, gradient accents, and centered 52dp primary buttons.
-- Gemini `generateContent` and OpenRouter-compatible requests using a key configured in the app.
-- Encrypted local preferences are used for provider keys when AndroidX encrypted storage initializes successfully. Do not assume this is cloud account storage.
-- Optional accessibility observation of visible UI labels while a session is active.
-- Accessibility actions prefer the smallest reasonable visible clickable target and use a centered gesture fallback when semantic click actions are unavailable.
-- Start, Pause/Resume, and Stop controls, activity log, local history, and an admin-only plan preview. Regular users cannot unlock paid limits by changing a local selector.
-- GitHub Actions builds a debug APK and uploads it as an artifact.
-- `firestore.rules` provides a deny-by-default starter for a future Firebase integration; see `FIREBASE_SECURITY_SETUP.md`.
+## What this rebuild currently adds
 
-## Build and install
-1. Open the **Actions** tab in this repository.
-2. Open **Build Android APK** and wait for the run to finish successfully.
-3. Open the completed run and download the `pocket-agent-debug-apk` artifact.
-4. Extract the ZIP on your Android phone and install `app-debug.apk`.
+- Premium light visual direction with rounded cards, a violet accent palette, JARVIS branding, and a redesigned launcher icon.
+- A dedicated Connections screen.
+- A clear distinction between ordinary app automation and optional private account integrations.
+- Generic target-app extraction instead of a hard-coded Quiz and Earn workflow.
+- Improved accessibility label matching, semantic click attempts, coordinate-gesture fallback, gesture callbacks, and a small circular tap marker.
+- India-timezone daily action accounting in the client: Free 500/day, Pro 5,000/day, Max up to a theoretical 2 billion/day, Admin unlimited when verified by a Firebase admin claim.
+- A written unified-agent architecture and staged implementation plan.
+- GitHub Actions APK builds for main and rebuild/** branches.
 
-## Set up
-1. Open Pocket Agent and enter your Gemini API key and model (default: `gemini-2.5-flash`).
-2. Use Google sign-in or email/password if Firebase is configured, or choose **Continue offline** whenever you prefer not to sign in. Offline mode creates no fake account; account sync and cloud bug reports require Firebase.
-3. Tap **Open Accessibility Settings** and enable Pocket Agent only if you want screen observation and automation.
-4. Tap **Start**, switch to the target app, then return and refresh the observed screen text. Enter your task and tap **Run task** to start step-by-step automation. **Pause/Resume** and **Stop** remain available.
-5. Cloud mode sends your task and, only when enabled, observed screen labels to the selected provider. Local Rules mode needs no API key. Local AI requires a compatible MediaPipe `.task` model.
+## App automation and Connections
+
+**Normal app automation does not require a separate connection for every app.** With the JARVIS Accessibility Service enabled, the agent can try to launch installed apps and interact with visible accessible controls. This can support ordinary tasks such as opening an app, searching its visible interface, scrolling, and entering ordinary text.
+
+Android/OEM restrictions, protected screens, custom canvases, inaccessible controls, and app policies can prevent some actions. A gesture being dispatched is not proof that the app accepted it; JARVIS must inspect the next screen before claiming the task is complete.
+
+The Connections screen is for optional official OAuth/API integrations (for example Gmail, Drive, Canva, GitHub, and Spotify) when a task needs account-level data or reliable structured operations. These OAuth integrations are **not configured yet** in this build. If an official connection is unavailable, JARVIS can still try supported app-based UI automation and must clearly report which route it used.
+
+## Current AI engine status
+
+The current project still contains legacy Gemini/OpenRouter developer configuration and an imported MediaPipe .task local-model path. The end-user API-key-free custom JARVIS model, hosted inference service, fine-tuning pipeline, and full multi-capability executor are **not implemented yet**. Do not treat Local Rules as a trained AI model or assume a model file is compatible merely because it can be selected.
+
+See docs/JARVIS_ARCHITECTURE.md for the unified skill model, integration rules, safety policy, pricing proposal, and development milestones.
+
+## Plans — proposed, not yet for sale
+
+| Plan | Proposed price | Daily allowance |
+|---|---:|---:|
+| Free | ₹0 | 500 successful actions |
+| Pro | ₹199/month | 5,000 successful actions |
+| Max | ₹499/month | Up to 2 billion theoretical actions, subject to fair-use and infrastructure safeguards |
+| Admin | Private | Unlimited for authorised admin accounts |
+
+Prices are proposals, not active subscriptions. Paid tiers require secure billing and server-verified entitlements. Client-side usage counters are for the current prototype only and are not a security boundary. Admin access must be granted only through a trusted Firebase Admin SDK custom claim; never grant it from local preferences.
+
+## Build an APK
+
+1. Open the repository's Actions tab.
+2. Select the latest Build JARVIS Android APK run for the rebuild/jarvis-unified-agent branch.
+3. Wait for a successful result.
+4. Download the jarvis-debug-apk artifact, extract it on Android, and install app-debug.apk.
+
+The workflow uses JDK 17 and Gradle 8.9. The app's minimum Android version is API 26 (Android 8.0).
 
 ## Important limitations
-- This is still an experimental UI-control prototype. Accessibility clicks can fail on apps with custom canvases, hidden labels, overlays, or unusual accessibility trees. Test carefully and keep Stop available.
-- The glass effect is implemented with native gradients, translucent white card colors, outlines, and elevation; it is not a real-time background blur effect.
-- Firebase email/password and Google sign-in flows plus password reset are in the client code. They require the project owner’s matching `app/google-services.json`, configured Firebase providers/OAuth client, matching signing-certificate SHA-1 for Google sign-in, and Firestore configured before they can run. Email verification is requested at account creation. Do not distribute a build as production-ready until configured and tested.
-- Firebase Auth and Firestore dependencies/client calls are in the Android app, but no Firebase project config is included in this repository. Rules in `firestore.rules` are a starter and must be tested in Firebase Emulator/Rules Playground before deployment.
-- Admin UI checks in a client are not a security boundary. The app checks the Firebase ID token’s `admin` custom claim for its admin console; production admin access still requires granting that claim only from a trusted Admin SDK and enforcing the Firestore rules. The bug-report inbox is stored in Firebase but is not automatically delivered to ChatGPT.
-- “Local AI” is not currently a verified on-device LLM integration; some agent paths use deterministic local rules. Importing a model file alone does not prove that inference works.
-- Accessibility text may be incomplete on some screens. Cloud mode sends your task and, when enabled, observed screen labels to the selected provider. Do not include passwords, API keys, payment details, OTPs, or other sensitive information.
 
-## Privacy
-Provider API keys are stored using AndroidX encrypted preferences when available, with a local fallback if encrypted storage cannot initialize. Cloud requests send the selected task and optionally observed screen labels to Gemini or OpenRouter. Never enter passwords, OTPs, payment details, or other sensitive information into automation tasks.
+- Accessibility automation is best-effort and cannot guarantee control of every app or screen.
+- OAuth account integrations, server-side billing, server-side usage enforcement, and the full multi-capability skill executor are not yet complete.
+- Cloud mode still depends on the legacy provider key configured in the app; this is temporary and does not meet the final API-key-free product goal.
+- Firebase sign-in and Firestore features require the owner's matching app/google-services.json, enabled providers, an OAuth client, configured Firestore, and tested security rules.
+- Local model inference must be validated on the actual target device. GitHub Actions builds APKs; it is not a free GPU training service.
+- Never automate passwords, OTPs, payment credentials, account-security changes, purchases, or destructive actions without the appropriate safeguards and explicit confirmation.
 
-## Project
-- Android: Kotlin, native views
-- Min SDK: 26
-- Build: GitHub Actions + Gradle 8.9 + JDK 17
+## Repository
 
-
-## Enhancement tracking
-- [Pocket Agent v2 issue #1](https://github.com/divyankitiwari-lgtm/pocket-agent-clean2/issues/1) tracks the remaining UI, accessibility, AI reliability, Firebase authentication, admin plan preview, and bug-report console work.
-- [Firebase setup and security notes](FIREBASE_SECURITY_SETUP.md)
-
-
-## Firebase client status
-The app includes Firebase Authentication and Firestore client calls. For a working account/database build, add your Firebase-generated `app/google-services.json` privately (do not add service-account private keys), enable Email/Password Authentication, create Firestore, test and publish `firestore.rules`, and grant admin custom claims through a trusted backend. The current repository does not contain your Firebase project configuration, so the connected account/database path cannot be verified from this code alone.
+- Android app: Kotlin and native Android views
+- Package: com.example.pocketagent (package ID retained for upgrade compatibility)
+- Build: GitHub Actions, Gradle 8.9, JDK 17
+- Active rebuild branch: rebuild/jarvis-unified-agent
