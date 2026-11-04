@@ -56,14 +56,20 @@ class AgentAccessibilityService : AccessibilityService() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(7), dp(7), dp(7))
-                background = pill(Color.rgb(27, 30, 47), 24)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.rgb(255, 255, 255), Color.rgb(238, 241, 255))
+                ).apply {
+                    cornerRadius = dp(24).toFloat()
+                    setStroke(dp(1), Color.rgb(218, 224, 245))
+                }
                 elevation = dp(8).toFloat()
             }
             val label = TextView(this).apply {
                 text = prefs.getString("current_agent_status", "● JARVIS · Running").orEmpty()
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.WHITE)
+                setTextColor(Color.rgb(37, 43, 65))
                 setPadding(0, 0, dp(8), 0)
             }
             panel.addView(label, LinearLayout.LayoutParams(-2, dp(38)))
@@ -72,7 +78,10 @@ class AgentAccessibilityService : AccessibilityService() {
                 textSize = 11f
                 isAllCaps = false
                 setTextColor(Color.WHITE)
-                background = pill(Color.rgb(117, 92, 255), 18)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.rgb(127, 111, 239), Color.rgb(94, 78, 208))
+                ).apply { cornerRadius = dp(18).toFloat() }
                 setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
                     val paused = prefs.getBoolean("agent_paused", false)
@@ -90,7 +99,10 @@ class AgentAccessibilityService : AccessibilityService() {
                 textSize = 11f
                 isAllCaps = false
                 setTextColor(Color.WHITE)
-                background = pill(Color.rgb(190, 55, 72), 18)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.rgb(235, 113, 126), Color.rgb(190, 55, 72))
+                ).apply { cornerRadius = dp(18).toFloat() }
                 setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
                     prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
