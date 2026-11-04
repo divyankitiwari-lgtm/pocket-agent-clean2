@@ -788,7 +788,7 @@ class MainActivity : Activity() {
                 it.getString("title").orEmpty() + "\\n" + it.getString("category").orEmpty() + " · " + it.id.take(10) }.toTypedArray()
             AlertDialog.Builder(this).setTitle("Admin bug inbox · newest 50").setItems(labels) { _, index ->
                 val doc = docs[index]
-                val details = "Reference: " + doc.id + "\\nStatus: " + doc.getString("status").orEmpty() +
+        val details = "FREE · ₹0\n500 successful actions per day\n\nPRO · ₹199/month (proposed)\n5,000 successful actions per day\n\nMAX · ₹499/month (proposed)\nUp to 2 billion theoretical actions/day, subject to fair-use, rate, and infrastructure safeguards\n\nADMIN · private access\nUnlimited for accounts with an authorised Firebase admin claim.\n\nPaid billing is not enabled in this build. These are proposed launch prices; paid limits will unlock only after secure billing and server-verified entitlements are configured."
                     "\\nCategory: " + doc.getString("category").orEmpty() + "\\n\\nSteps: " + doc.getString("steps").orEmpty() +
                     "\\n\\nExpected: " + doc.getString("expected").orEmpty() + "\\n\\nActual: " + doc.getString("actual").orEmpty()
                 val states = arrayOf("new", "investigating", "fixed")
