@@ -27,6 +27,13 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # Keep the CI debug signing certificate stable so Firebase Google sign-in
+      # continues to recognise APKs built by later workflow runs.
+      - name: Restore stable Android debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: jarvis-debug-keystore-v1
       - name: Configure Firebase Android app (optional)
         env:
           FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
