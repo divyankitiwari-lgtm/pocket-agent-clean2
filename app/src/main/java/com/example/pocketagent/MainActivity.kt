@@ -217,13 +217,7 @@ class MainActivity : Activity() {
                             startAutonomousAgent(agentButton)
                         }
                     }
-                    VoiceSessionService.ACTION_FOLLOWUP -> {
-                        val current = prefs.getString("current_agent_status", "Working").orEmpty()
-                        val last = prefs.getString("last_action_result", "").orEmpty()
-                        val reply = if (last.isBlank()) "I'm working on ${prefs.getString("last_task", "your task")}. Current status: $current."
-                            else "I'm working on ${prefs.getString("last_task", "your task")}. Current status: $current. The latest action result is ${last.take(180)}."
-                        speakThroughVoiceService(reply)
-                    }
+                    VoiceSessionService.ACTION_FOLLOWUP -> answerVoiceFollowup(spoken)
                     VoiceSessionService.ACTION_STATE -> {
                         val state = intent?.getStringExtra(VoiceSessionService.EXTRA_TEXT).orEmpty()
                         when (state) {
@@ -315,6 +309,31 @@ class MainActivity : Activity() {
             .setAction(VoiceSessionService.ACTION_SPEAK)
             .putExtra(VoiceSessionService.EXTRA_TEXT, message)
         try { startService(intent) } catch (_: Exception) {}
+    }
+
+    private fun answerVoiceFollowup(question: String) {
+        if (question.isBlank()) return
+        Thread {
+            val taskNow = prefs.getString("last_task", "the current task").orEmpty()
+            val statusNow = prefs.getString("current_agent_status", "Working").orEmpty()
+            val latest = prefs.getString("last_action_result", "No action result yet").orEmpty()
+            val prompt = """
+You are JARVIS, a concise voice assistant. The user is speaking to you while an Android automation task is running.
+Answer the user's question directly in natural spoken English. Do not return JSON, do not issue an automation action, and do not claim an action succeeded unless the status below confirms it.
+Current task: $taskNow
+Current status: $statusNow
+Latest verified action result: $latest
+User's spoken question: $question
+Keep the answer short and useful. If the question asks for progress, explain the current state and any blocker. If you cannot know something from this context, say so honestly.
+""".trimIndent()
+            val response = try {
+                generateLocalAi(prompt).trim().take(650)
+            } catch (_: Exception) {
+                val problem = latest.take(160)
+                "I'm still working on $taskNow. My current status is $statusNow. Latest action information: $problem. I can't answer that in more detail from the current device state."
+            }
+            runOnUiThread { speakThroughVoiceService(response) }
+        }.start()
     }
 
     private fun showJarvisMenu() {
@@ -572,6 +591,7 @@ class MainActivity : Activity() {
             throw error
         }
     }
+    @Synchronized
     private fun generateLocalAi(prompt: String): String {
         val modelFile = ensureGemmaModelBundled()
         val engine = gemmaEngine ?: GemmaEngine(applicationContext, modelFile).also {
