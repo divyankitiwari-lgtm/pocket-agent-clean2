@@ -1299,6 +1299,18 @@ class MainActivity : Activity() {
         val userTask = task.text.toString().trim()
         val shareScreenText = useScreen.isChecked
         if (userTask.isBlank()) { status.text = "Describe your task first"; return }
+        if (!prefs.getBoolean("accessibility_connected", false)) {
+            AlertDialog.Builder(this)
+                .setTitle("Enable JARVIS app control")
+                .setMessage("Android requires you to enable the JARVIS Accessibility Service before it can read app labels, open apps, or tap controls. This permission stays under your control.")
+                .setNegativeButton("Not now", null)
+                .setPositiveButton("Open settings") { _, _ ->
+                    startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                .show()
+            status.text = "App control needs the JARVIS Accessibility Service"
+            return
+        }
         if (mode == 0 && key.isBlank()) { status.text = "Cloud engine not configured · open Advanced AI engine settings or choose an offline mode"; return }
         if (agentRunning) {
             agentRunning = false
