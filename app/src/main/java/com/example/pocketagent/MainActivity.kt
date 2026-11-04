@@ -57,6 +57,8 @@ class MainActivity : Activity() {
     private var firebaseAuth: FirebaseAuth? = null
     private var firestore: FirebaseFirestore? = null
     private var welcomeDialog: AlertDialog? = null
+    // Keep the on-device model loaded between agent steps; loading a ~500 MB model every step is too slow.
+    private var gemmaEngine: GemmaEngine? = null
 
     private val ink = Color.rgb(31, 38, 58)
     private val muted = Color.rgb(111, 119, 139)
@@ -630,12 +632,22 @@ class MainActivity : Activity() {
     }
 
     private fun generateLocalAi(prompt: String): String {
-        val options = com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions.builder()
-            .setModelPath(localModelFile().absolutePath)
-            .setMaxTokens(512)
-            .build()
-        val engine = com.google.mediapipe.tasks.genai.llminference.LlmInference.createFromOptions(this, options)
-        return try { engine.generateResponse(prompt) } finally { engine.close() }
+        val modelFile = localModelFile()
+        check(modelFile.isFile && modelFile.length() > 1_000_000L) {
+            "Gemma model file is missing or incomplete. Import the .task file again."
+        }
+        val engine = gemmaEngine ?: GemmaEngine(applicationContext, modelFile).also {
+            gemmaEngine = it
+            logCommunication("LOCAL AI", "Gemma runtime loaded from app-private model storage.")
+        }
+        return engine.generate(prompt)
+    }
+
+    override fun onDestroy() {
+        // Release native model memory when the activity is destroyed.
+        try { gemmaEngine?.close() } catch (_: Exception) {}
+        gemmaEngine = null
+        super.onDestroy()
     }
 
     private fun extractRequestedApp(userTask: String): String {
