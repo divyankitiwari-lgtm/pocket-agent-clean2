@@ -224,6 +224,16 @@ class MainActivity : Activity() {
                             else "I'm working on ${prefs.getString("last_task", "your task")}. Current status: $current. The latest action result is ${last.take(180)}."
                         speakThroughVoiceService(reply)
                     }
+                    VoiceSessionService.ACTION_STATE -> {
+                        val state = intent?.getStringExtra(VoiceSessionService.EXTRA_TEXT).orEmpty()
+                        when (state) {
+                            "LISTENING" -> setOrbState(LiquidOrbView.State.LISTENING, "LISTENING · SPEAK NATURALLY")
+                            "SPEAKING" -> setOrbState(LiquidOrbView.State.SPEAKING, "JARVIS IS SPEAKING")
+                            "PAUSED" -> setOrbState(LiquidOrbView.State.PAUSED, "TASK PAUSED · SAY CONTINUE")
+                            "AUTOMATING" -> setOrbState(LiquidOrbView.State.AUTOMATING, "JARVIS IS WORKING")
+                            "IDLE" -> setOrbState(LiquidOrbView.State.IDLE, "TAP THE ORB TO TALK")
+                        }
+                    }
                 }
             }
         }
@@ -240,10 +250,10 @@ class MainActivity : Activity() {
         voiceReceiverRegistered = true
 
         val signedInUser = firebaseAuth?.currentUser
-        if (signedInUser == null) content.post { showWelcomeGate() }
+        if (signedInUser == null) root.post { showWelcomeGate() }
         else {
             refreshAdminClaim(signedInUser)
-            content.post {
+            root.post {
                 showAccountBanner(signedInUser)
                 showPermissionOnboardingIfNeeded()
             }
@@ -447,9 +457,7 @@ class MainActivity : Activity() {
         super.onResume()
         if (::planPill.isInitialized) updatePlanPill()
         if (firebaseAuth?.currentUser != null && permissionDialog?.isShowing == true) {
-            val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.RECORD_AUDIO
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val micGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
             val accessReady = prefs.getBoolean("accessibility_connected", false)
             if (micGranted && accessReady) {
                 permissionDialog?.dismiss()
@@ -1308,6 +1316,8 @@ class MainActivity : Activity() {
             status.text = "Stopping JARVIS…"; agentButton.text = "▶ Start JARVIS"; return
         }
         agentRunning = true
+        setOrbState(LiquidOrbView.State.AUTOMATING, "JARVIS IS WORKING")
+        speakThroughVoiceService("I'm starting your task now.")
         prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false)
             .putString("current_agent_status", "● JARVIS · Starting").putString("last_task", userTask)
             .putString("pending_action", "").putString("last_action_result", "").apply()
@@ -1452,7 +1462,13 @@ Previous action result: ${lastResult.take(500)}
                 agentRunning = false
                 prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
                     .putString("current_agent_status", "● JARVIS · Stopped").putString("pending_action", "").apply()
-                runOnUiThread { agentButton.text = "▶ Start JARVIS" }
+                runOnUiThread {
+                    agentButton.text = "▶ Start JARVIS"
+                    if (prefs.getBoolean("voice_session_requested", false)) setOrbState(LiquidOrbView.State.LISTENING, "LISTENING · READY FOR YOUR NEXT COMMAND")
+                    else setOrbState(LiquidOrbView.State.IDLE, "TASK ENDED · TAP THE ORB TO TALK")
+                }
+                val endStatus = prefs.getString("current_agent_status", "").orEmpty()
+                speakThroughVoiceService(if (endStatus.contains("complete", true)) "The task is complete." else "The automation has stopped.")
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
         }.start()
