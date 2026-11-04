@@ -93,7 +93,10 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(page)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(250, 251, 255), Color.rgb(239, 242, 255), Color.rgb(248, 250, 255))
+            )
         }
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply {
@@ -132,7 +135,13 @@ class MainActivity : Activity() {
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(16), dp(12), dp(16), dp(8))
-                setBackgroundColor(Color.rgb(247, 247, 252))
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.rgb(255, 255, 255), Color.rgb(241, 243, 255))
+                ).apply {
+                    cornerRadius = dp(22).toFloat()
+                    setStroke(dp(1), Color.rgb(226, 229, 245))
+                }
             }
             panel.addView(TextView(this).apply {
                 text = "LIVE AUTOMATION"
@@ -213,7 +222,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "Describe what you want done. JARVIS chooses the right tools, works across supported apps, and checks each action. Start, pause, and stop whenever you need."
+            text = "Tell JARVIS what you want done. It opens supported apps, follows your instructions, and shows the result of each action."
             textSize = 14f
             setTextColor(muted)
             setLineSpacing(dp(4).toFloat(), 1f)
@@ -685,7 +694,7 @@ class MainActivity : Activity() {
         if (!isAdminAccount() || contentLayout.findViewWithTag<View>("pocket_agent_admin_panel") != null) return
         val panel = card(Color.WHITE).apply { tag = "pocket_agent_admin_panel" }
         panel.addView(TextView(this).apply {
-            text = "✦ ADMIN CONSOLE · VERIFIED ROLE"
+            text = "✦ ADMIN · VERIFIED ACCOUNT"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -695,7 +704,14 @@ class MainActivity : Activity() {
                 intArrayOf(Color.rgb(74, 47, 180), Color.rgb(45, 122, 220))).apply { cornerRadius = dp(16).toFloat() }
         }, margins(bottom = 8))
         panel.addView(TextView(this).apply {
-            text = "Plan controls are test previews only; they do not grant paid entitlements."
+            text = "Signed in as ${firebaseAuth?.currentUser?.email ?: "Admin"}\\nRole: ADMIN · verified by Firebase"
+            textSize = 13f
+            setTextColor(ink)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(Color.rgb(247, 247, 255), 16)
+        }, margins(bottom = 8))
+        panel.addView(TextView(this).apply {
+            text = "Plan previews do not grant paid entitlements."
             textSize = 12f; setTextColor(muted)
         }, margins(bottom = 8))
         panel.addView(actionButton("View plans and usage", Color.rgb(238, 235, 255), accent).apply {
@@ -1178,11 +1194,11 @@ class MainActivity : Activity() {
         if (::screenPreview.isInitialized) refreshScreenText()
         if (::status.isInitialized) {
             status.text = when {
-                agentRunning && prefs.getBoolean("agent_paused", false) -> "Agent paused · tap Start to resume"
-                agentRunning -> "Agent running · check the live action log"
-                prefs.getBoolean("session_active", false) -> "Screen observation active"
+                agentRunning && prefs.getBoolean("agent_paused", false) -> "Agent paused · open Live automation for details"
+                agentRunning -> "Agent running · open Live automation for details"
+                firebaseAuth?.currentUser != null -> "ACCOUNT · ${firebaseAuth?.currentUser?.email ?: "Signed-in user"} · ${currentPlan().uppercase(Locale.US)}"
                 prefs.getBoolean("accessibility_connected", false) -> "Accessibility service connected"
-                else -> "Ready · choose an AI mode and task"
+                else -> "Ready · describe a task to JARVIS"
             }
         }
     }
