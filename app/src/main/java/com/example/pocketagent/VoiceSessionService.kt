@@ -13,6 +13,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /**
@@ -182,6 +183,21 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
         ttsReady = status == TextToSpeech.SUCCESS
         if (ttsReady) {
             tts?.language = Locale.forLanguageTag("en-IN")
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    handler.post {
+                        speaking = false
+                        if (prefs.getBoolean("voice_session_requested", false)) startListening()
+                    }
+                }
+                override fun onError(utteranceId: String?) {
+                    handler.post {
+                        speaking = false
+                        if (prefs.getBoolean("voice_session_requested", false)) startListening()
+                    }
+                }
+            })
             if (prefs.getBoolean("voice_session_requested", false)) startVoiceSession()
         }
     }
@@ -205,9 +221,6 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
     }
     override fun onPartialResults(partialResults: android.os.Bundle?) {}
     override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
-
-    override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {}
-    override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {}
 
     private fun stopVoiceSession() {
         prefs.edit().putBoolean("voice_session_requested", false).apply()
