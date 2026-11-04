@@ -250,6 +250,220 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun glassSurface(radius: Int): GradientDrawable =
+        GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.argb(175, 28, 43, 58), Color.argb(115, 13, 22, 36))
+        ).apply {
+            cornerRadius = dp(radius).toFloat()
+            setStroke(dp(1), Color.argb(105, 180, 235, 239))
+        }
+
+    private fun updatePlanPill() {
+        if (::planPill.isInitialized) {
+            planPill.text = "YOU ARE ON ${currentPlan().uppercase(Locale.US)} PLAN"
+        }
+    }
+
+    private fun setOrbState(state: LiquidOrbView.State, caption: String) {
+        runOnUiThread {
+            if (::orbView.isInitialized) orbView.setState(state)
+            if (::status.isInitialized) status.text = caption.uppercase(Locale.US)
+        }
+    }
+
+    private fun toggleVoiceSession() {
+        if (prefs.getBoolean("voice_session_requested", false)) {
+            prefs.edit().putBoolean("voice_session_requested", false).apply()
+            stopService(Intent(this, VoiceSessionService::class.java).setAction(VoiceSessionService.ACTION_STOP))
+            setOrbState(LiquidOrbView.State.IDLE, "VOICE SESSION OFF · TAP TO SPEAK")
+            return
+        }
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.RECORD_AUDIO
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 8821)
+            return
+        }
+        startVoiceSessionNow()
+    }
+
+    private fun startVoiceSessionNow() {
+        prefs.edit().putBoolean("voice_session_requested", true).apply()
+        val intent = Intent(this, VoiceSessionService::class.java).setAction(VoiceSessionService.ACTION_START)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+            setOrbState(LiquidOrbView.State.LISTENING, "LISTENING · SPEAK NATURALLY")
+        } catch (error: Exception) {
+            prefs.edit().putBoolean("voice_session_requested", false).apply()
+            setOrbState(LiquidOrbView.State.ERROR, "VOICE SESSION COULD NOT START")
+        }
+    }
+
+    private fun speakThroughVoiceService(message: String) {
+        if (message.isBlank()) return
+        val intent = Intent(this, VoiceSessionService::class.java)
+            .setAction(VoiceSessionService.ACTION_SPEAK)
+            .putExtra(VoiceSessionService.EXTRA_TEXT, message)
+        try { startService(intent) } catch (_: Exception) {}
+    }
+
+    private fun showJarvisMenu() {
+        val uid = firebaseAuth?.currentUser?.uid ?: "Offline session"
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(12))
+            background = glassSurface(26)
+        }
+        panel.addView(TextView(this).apply {
+            text = "ACCOUNT ID"
+            textSize = 10f
+            letterSpacing = 0.14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(120, 211, 211))
+        })
+        panel.addView(TextView(this).apply {
+            text = uid
+            textSize = 12f
+            setTextColor(Color.rgb(225, 240, 245))
+            setTextIsSelectable(true)
+            setPadding(0, dp(8), 0, dp(14))
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("JARVIS MENU")
+            .setView(panel)
+            .setItems(arrayOf("Settings", "Log out")) { _, which ->
+                if (which == 0) showJarvisSettings() else confirmLogout()
+            }
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(8, 13, 22)))
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.rgb(140, 225, 220))
+        }
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(8, 13, 22)))
+    }
+
+    private fun showJarvisSettings() {
+        val options = arrayOf("Permissions & voice", "Connections", "Saved history")
+        AlertDialog.Builder(this)
+            .setTitle("SETTINGS")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showPermissionOnboarding()
+                    1 -> startActivity(Intent(this, ConnectionsActivity::class.java))
+                    2 -> showHistory()
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showPermissionOnboardingIfNeeded() {
+        val user = firebaseAuth?.currentUser ?: return
+        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val accessibilityReady = prefs.getBoolean("accessibility_connected", false)
+        if (!micGranted || !accessibilityReady) showPermissionOnboarding()
+        updatePlanPill()
+    }
+
+    private fun showPermissionOnboarding() {
+        if (permissionDialog?.isShowing == true) return
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(12), dp(22), dp(10))
+            background = glassSurface(26)
+        }
+        panel.addView(TextView(this).apply {
+            text = "ONE LAST SETUP"
+            textSize = 11f
+            letterSpacing = 0.15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(104, 226, 218))
+        }, margins(bottom = 10))
+        panel.addView(TextView(this).apply {
+            text = "JARVIS needs microphone access to hear your voice commands, and Accessibility access to understand and control visible app interfaces when you ask it to."
+            textSize = 14f
+            setTextColor(Color.rgb(218, 231, 239))
+            setLineSpacing(dp(4).toFloat(), 1f)
+        }, margins(bottom = 18))
+        val mic = actionButton("Allow microphone", Color.rgb(27, 104, 112), Color.WHITE).apply {
+            setOnClickListener {
+                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 8821)
+            }
+        }
+        val access = actionButton("Enable app control", Color.rgb(24, 38, 55), Color.rgb(207, 236, 241)).apply {
+            setOnClickListener {
+                startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
+        panel.addView(mic, margins(bottom = 9))
+        panel.addView(access, margins(bottom = 9))
+        panel.addView(TextView(this).apply {
+            text = "You stay in control. Voice listening starts only when you tap the JARVIS orb."
+            textSize = 11f
+            setTextColor(Color.rgb(145, 172, 186))
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("JARVIS PERMISSIONS")
+            .setView(panel)
+            .setPositiveButton("Continue", null)
+            .setCancelable(false)
+            .create()
+        permissionDialog = dialog
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
+            dialog.window?.setLayout(-1, -1)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(116, 230, 219))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val hasMic = androidx.core.content.ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.RECORD_AUDIO
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val hasAccess = prefs.getBoolean("accessibility_connected", false)
+                if (hasMic && hasAccess) {
+                    permissionDialog = null
+                    dialog.dismiss()
+                    updatePlanPill()
+                } else {
+                    status.text = "ENABLE BOTH PERMISSIONS TO CONTINUE"
+                }
+            }
+        }
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
+        dialog.window?.setLayout(-1, -1)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 8821) {
+            if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (prefs.getBoolean("voice_session_requested", false)) startVoiceSessionNow()
+                permissionDialog?.let { if (prefs.getBoolean("accessibility_connected", false)) it.dismiss() }
+            } else {
+                setOrbState(LiquidOrbView.State.ERROR, "MICROPHONE PERMISSION DENIED")
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::planPill.isInitialized) updatePlanPill()
+        if (firebaseAuth?.currentUser != null && permissionDialog?.isShowing == true) {
+            val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val accessReady = prefs.getBoolean("accessibility_connected", false)
+            if (micGranted && accessReady) {
+                permissionDialog?.dismiss()
+                permissionDialog = null
+            }
+        }
+    }
+
     private fun localModelFile(): File = File(filesDir, "pocket-agent-local-model.task")
 
     @Deprecated("Use document picker")
@@ -365,7 +579,11 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        // Release native model memory when the activity is destroyed.
+        if (voiceReceiverRegistered) {
+            try { unregisterReceiver(voiceReceiver) } catch (_: Exception) {}
+            voiceReceiverRegistered = false
+        }
+        // Keep the user-started voice foreground service alive while another app is in front.
         try { gemmaEngine?.close() } catch (_: Exception) {}
         gemmaEngine = null
         super.onDestroy()
@@ -606,9 +824,8 @@ class MainActivity : Activity() {
     }
 
     private fun showAccountBanner(user: FirebaseUser) {
-        val label = user.displayName?.takeIf { it.isNotBlank() } ?: user.email ?: "Signed-in user"
-        status.text = "ACCOUNT · $label · ${currentPlan().uppercase(Locale.US)}"
-        if (isAdminAccount()) showAdminBanner()
+        updatePlanPill()
+        if (::status.isInitialized) status.text = "TAP THE ORB TO TALK"
     }
 
     private fun currentPlan(): String {
