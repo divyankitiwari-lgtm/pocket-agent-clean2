@@ -58,10 +58,10 @@ class MainActivity : Activity() {
     private var firestore: FirebaseFirestore? = null
     private var welcomeDialog: AlertDialog? = null
 
-    private val ink = Color.rgb(29, 29, 31)
-    private val muted = Color.rgb(110, 110, 115)
-    private val accent = Color.rgb(0, 113, 227)
-    private val page = Color.rgb(245, 245, 247)
+    private val ink = Color.rgb(31, 38, 58)
+    private val muted = Color.rgb(111, 119, 139)
+    private val accent = Color.rgb(105, 86, 220)
+    private val page = Color.rgb(246, 247, 251)
     private val white = Color.WHITE
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -122,7 +122,7 @@ class MainActivity : Activity() {
         val logoutButton = actionButton("Log out", Color.rgb(255, 255, 255), Color.rgb(190, 45, 50))
         logoutButton.setOnClickListener { confirmLogout() }
         topBar.addView(logoutButton, LinearLayout.LayoutParams(-2, dp(46)).apply { marginStart = dp(6) })
-        val liveButton = actionButton("◉ Live", Color.rgb(30, 30, 32), Color.WHITE)
+        val liveButton = actionButton("◉ Activity", Color.rgb(239, 237, 255), accent)
         liveButton.setOnClickListener {
             val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank {
                 "No activity yet. Start a task to see each planned action and its result here."
@@ -169,7 +169,7 @@ class MainActivity : Activity() {
                 }
                 liveDialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
                     val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Pocket Agent activity", logView.text.toString()))
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("JARVIS activity", logView.text.toString()))
                     status.text = "Activity log copied"
                 }
             }
@@ -389,7 +389,7 @@ class MainActivity : Activity() {
             } catch (_: Exception) {
                 startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
             }
-            status.text = "In Battery settings, allow Pocket Agent to run without battery restrictions if your phone offers that option."
+            status.text = "In Battery settings, allow JARVIS to run without battery restrictions if your phone offers that option."
         }
         screenCard.addView(backgroundButton, margins(bottom = 8))
         val refreshButton = actionButton("Refresh observed screen text", Color.rgb(239, 240, 247), ink)
@@ -417,7 +417,7 @@ class MainActivity : Activity() {
         start.setOnClickListener {
             if (agentRunning) {
                 prefs.edit().putBoolean("agent_paused", false).putBoolean("session_active", true)
-                    .putString("current_agent_status", "● Pocket Agent · Resuming").apply()
+                    .putString("current_agent_status", "● JARVIS · Resuming").apply()
                 status.text = "Agent resumed"
             } else {
                 prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false).apply()
@@ -429,7 +429,7 @@ class MainActivity : Activity() {
         pause.setOnClickListener {
             if (agentRunning) {
                 prefs.edit().putBoolean("agent_paused", true).putString("pending_action", "")
-                    .putString("current_agent_status", "Ⅱ Pocket Agent · Paused").apply()
+                    .putString("current_agent_status", "Ⅱ JARVIS · Paused").apply()
                 status.text = "Agent paused · tap Start to resume"
             } else {
                 prefs.edit().putBoolean("session_active", false).apply()
@@ -505,7 +505,7 @@ class MainActivity : Activity() {
                         showAccountBanner(user)
                         status.text = "Signed in with Google"
                         val profile = hashMapOf<String, Any>(
-                            "displayName" to (user.displayName ?: account.displayName ?: "Pocket Agent user"),
+                            "displayName" to (user.displayName ?: account.displayName ?: "JARVIS user"),
                             "email" to (user.email ?: account.email.orEmpty()),
                             "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
                         )
@@ -634,7 +634,7 @@ class MainActivity : Activity() {
 
     private fun confirmLogout() {
         AlertDialog.Builder(this)
-            .setTitle("Log out of Pocket Agent?")
+            .setTitle("Log out of JARVIS?")
             .setMessage("This stops any running agent and signs out of your Firebase account. Your API key and local history remain on this phone.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Log out") { _, _ ->
@@ -871,11 +871,11 @@ class MainActivity : Activity() {
         panel.addView(resetPasswordButton, margins(bottom = 8))
         panel.addView(TextView(this).apply {
             text = if (firebaseAuth == null) "Firebase is not configured. Add app/google-services.json, enable Email/Password in Firebase Console, and create Firestore. No demo password is accepted as a real login."
-                else "Firebase Authentication manages passwords. Pocket Agent does not save passwords in local preferences."
+                else "Firebase Authentication manages passwords. JARVIS does not save passwords in local preferences."
             textSize = 12f
             setTextColor(muted)
         })
-        val dialog = AlertDialog.Builder(this).setTitle("Welcome to Pocket Agent")
+        val dialog = AlertDialog.Builder(this).setTitle("Welcome to JARVIS")
             .setMessage("Sign in with Google or email, or create an account. You can continue offline without a demo account.")
             .setView(panel)
             .setCancelable(false).setPositiveButton("Create account", null)
@@ -1078,7 +1078,7 @@ class MainActivity : Activity() {
         val connected = prefs.getBoolean("accessibility_connected", false)
         screenPreview.text = when {
             text.isNotBlank() -> text
-            !connected -> "Pocket Agent has not confirmed an active Accessibility connection. Reopen this app or toggle the service off/on."
+            !connected -> "JARVIS has not confirmed an active Accessibility connection. Reopen this app or toggle the service off/on."
             !prefs.getBoolean("session_active", false) -> "Accessibility is connected, but observation is paused. Tap Start, switch to the target app, wait, then return and refresh."
             else -> "Service connected, but no readable labels were captured. Some apps hide their content from accessibility services."
         }
@@ -1086,7 +1086,7 @@ class MainActivity : Activity() {
 
     private fun showHistoryMenu() {
         val options = arrayOf("History", "Clear history", "Connection & privacy", "Report a bug", "Account & logout")
-        AlertDialog.Builder(this).setTitle("Pocket Agent")
+        AlertDialog.Builder(this).setTitle("JARVIS")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showHistory()
@@ -1178,7 +1178,7 @@ class MainActivity : Activity() {
         }
         agentRunning = true
         prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false)
-            .putString("current_agent_status", "● Pocket Agent · Starting").putString("last_task", userTask)
+            .putString("current_agent_status", "● JARVIS · Starting").putString("last_task", userTask)
             .putString("pending_action", "").putString("last_action_result", "").apply()
         agentButton.text = "■ Stop agent"
         status.text = "Agent starting · it will open the requested app and act step by step"
@@ -1320,7 +1320,7 @@ Previous action result: ${lastResult.take(500)}
             } finally {
                 agentRunning = false
                 prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
-                    .putString("current_agent_status", "● Pocket Agent · Stopped").putString("pending_action", "").apply()
+                    .putString("current_agent_status", "● JARVIS · Stopped").putString("pending_action", "").apply()
                 runOnUiThread { agentButton.text = "▶ Run task" }
                 logCommunication("AGENT STOP", "Agent loop ended.")
             }
@@ -1387,7 +1387,7 @@ Previous action result: ${lastResult.take(500)}
         val screen = prefs.getString("latest_screen_text", "").orEmpty()
         prefs.edit().putString("last_task", userTask).apply()
         val prompt = buildString {
-            append("You are Pocket Agent, an Android screen assistant. Give clear, concise, actionable guidance based on the user's task. Be explicit that you cannot perform actions on the phone. Never claim you performed actions. Never request passwords, payment details, or secret codes.\n\n")
+            append("You are JARVIS, a unified Android AI agent. Give clear, concise, actionable guidance based on the user's task. Be explicit that you cannot perform actions on the phone. Never claim you performed actions. Never request passwords, payment details, or secret codes.\n\n")
             append("User task:\n")
             append(userTask)
             if (useScreen.isChecked && screen.isNotBlank()) {
