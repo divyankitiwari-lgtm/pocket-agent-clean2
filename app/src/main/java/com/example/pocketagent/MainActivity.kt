@@ -218,6 +218,45 @@ class MainActivity : Activity() {
         })
         content.addView(hero, margins(bottom = 14))
 
+        val skillsCard = card(white)
+        skillsCard.addView(sectionTitle("ONE AGENT · MANY SKILLS"))
+        skillsCard.addView(TextView(this).apply {
+            text = "One task box. JARVIS selects the right capability and combines skills when a workflow needs more than one."
+            textSize = 13f
+            setTextColor(muted)
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }, margins(bottom = 12))
+        fun skillChip(title: String, active: Boolean): TextView = TextView(this).apply {
+            text = title
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (active) accent else ink)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = rounded(if (active) Color.rgb(239, 237, 255) else Color.rgb(247, 248, 251), 14)
+        }
+        val skillRows = listOf(
+            listOf(skillChip("App control · active", true), skillChip("Coding", false)),
+            listOf(skillChip("Video editing", false), skillChip("Research & web", false)),
+            listOf(skillChip("Websites & design", false), skillChip("Files & data", false))
+        )
+        skillRows.forEach { chips ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            chips.forEachIndexed { index, chip ->
+                row.addView(chip, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                    if (index == 0) marginEnd = dp(6) else marginStart = dp(6)
+                })
+            }
+            skillsCard.addView(row, margins(bottom = 7))
+        }
+        skillsCard.addView(TextView(this).apply {
+            text = "App control is the current working module. Coding, editing, research, website, and data execution modules are staged for development—not falsely marked as finished."
+            textSize = 11f
+            setTextColor(muted)
+            setPadding(0, dp(5), 0, 0)
+        })
+        content.addView(skillsCard, margins(bottom = 14))
+
         val plansCard = card(white)
         plansCard.addView(sectionTitle("PLANS · FREE / PRO / MAX"))
         plansCard.addView(TextView(this).apply {
