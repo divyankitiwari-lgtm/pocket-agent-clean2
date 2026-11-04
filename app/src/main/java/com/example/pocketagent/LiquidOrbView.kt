@@ -40,6 +40,7 @@ class LiquidOrbView @JvmOverloads constructor(
     fun setState(next: State) {
         if (state == next) return
         state = next
+        startMotion()
         contentDescription = when (next) {
             State.IDLE -> "JARVIS idle. Tap to speak."
             State.LISTENING -> "JARVIS is listening."
