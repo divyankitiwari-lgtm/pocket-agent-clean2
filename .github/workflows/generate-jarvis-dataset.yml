@@ -1,0 +1,43 @@
+name: Generate JARVIS 100K Dataset
+
+on:
+  push:
+    branches: ["ai-training/100k-bootstrap"]
+    paths:
+      - "ai-training/**"
+      - ".github/workflows/generate-jarvis-dataset.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout training pipeline
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Generate 100,000 training examples and 10,000 validation examples
+        run: |
+          python ai-training/generate_dataset.py --output-dir data --train-minimum 100000
+      - name: Validate dataset counts and schema
+        run: |
+          python ai-training/validate_dataset.py --data-dir data --minimum-train 100000
+      - name: Package dataset artifact
+        run: |
+          tar -czf jarvis-100k-dataset.tar.gz data/
+          sha256sum jarvis-100k-dataset.tar.gz > jarvis-100k-dataset.tar.gz.sha256
+      - name: Upload dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-100k-synthetic-dataset
+          path: |
+            jarvis-100k-dataset.tar.gz
+            jarvis-100k-dataset.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
