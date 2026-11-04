@@ -124,7 +124,7 @@ class MainActivity : Activity() {
         val logoutButton = actionButton("Log out", Color.rgb(255, 255, 255), Color.rgb(190, 45, 50))
         logoutButton.setOnClickListener { confirmLogout() }
         topBar.addView(logoutButton, LinearLayout.LayoutParams(-2, dp(46)).apply { marginStart = dp(6) })
-        val liveButton = actionButton("◉ Activity", Color.rgb(239, 237, 255), accent)
+        val liveButton = actionButton("◉ Live automation", Color.rgb(239, 237, 255), accent)
         liveButton.setOnClickListener {
             val log = prefs.getString("live_communication_log", "").orEmpty().ifBlank {
                 "No activity yet. Start a task to see each planned action and its result here."
@@ -135,14 +135,14 @@ class MainActivity : Activity() {
                 setBackgroundColor(Color.rgb(247, 247, 252))
             }
             panel.addView(TextView(this).apply {
-                text = "LIVE TASK TRACE"
+                text = "LIVE AUTOMATION"
                 textSize = 11f
                 letterSpacing = 0.12f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(accent)
             }, margins(bottom = 6))
             panel.addView(TextView(this).apply {
-                text = "Actions, tap results, and pauses · stored on this phone"
+                text = "See what JARVIS is attempting, what succeeded, and what needs attention."
                 textSize = 12f
                 setTextColor(muted)
             }, margins(bottom = 10))
@@ -158,7 +158,7 @@ class MainActivity : Activity() {
             val logScroll = ScrollView(this).apply { addView(logView) }
             panel.addView(logScroll, LinearLayout.LayoutParams(-1, dp(340)))
             val liveDialog = AlertDialog.Builder(this)
-                .setTitle("JARVIS · Live Activity")
+                .setTitle("JARVIS · Live automation")
                 .setView(panel)
                 .setPositiveButton("Close", null)
                 .setNeutralButton("Clear log", null)
@@ -446,56 +446,16 @@ class MainActivity : Activity() {
         screenCard.addView(screenPreview)
         content.addView(screenCard, margins(bottom = 14))
 
-        val controlsCard = card(white)
-        controlsCard.addView(sectionTitle("SESSION CONTROL"))
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        val start = actionButton("Start", accent, white)
-        start.setOnClickListener {
-            if (agentRunning) {
-                prefs.edit().putBoolean("agent_paused", false).putBoolean("session_active", true)
-                    .putString("current_agent_status", "● JARVIS · Resuming").apply()
-                status.text = "Agent resumed"
-            } else {
-                prefs.edit().putBoolean("session_active", true).putBoolean("agent_paused", false).apply()
-                status.text = "Observation started"
-                refreshScreenText()
-            }
-        }
-        val pause = actionButton("Pause", Color.rgb(238, 235, 255), accent)
-        pause.setOnClickListener {
-            if (agentRunning) {
-                prefs.edit().putBoolean("agent_paused", true).putString("pending_action", "")
-                    .putString("current_agent_status", "Ⅱ JARVIS · Paused").apply()
-                status.text = "Agent paused · tap Start to resume"
-            } else {
-                prefs.edit().putBoolean("session_active", false).apply()
-                status.text = "Observation paused"
-            }
-        }
-        val stop = actionButton("Stop", Color.rgb(255, 235, 237), Color.rgb(180, 50, 70))
-        stop.setOnClickListener {
-            agentRunning = false
-            prefs.edit().putBoolean("session_active", false).putBoolean("agent_paused", false)
-                .putString("pending_action", "").putString("latest_screen_text", "").apply()
-            screenPreview.text = "Screen text cleared."
-            status.text = "Observation and automation stopped"
-        }
-        controls.addView(start, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
-        controls.addView(pause, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5); marginEnd = dp(5) })
-        controls.addView(stop, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
-        controlsCard.addView(controls, margins(bottom = 12))
+        val statusCard = card(white)
         status = TextView(this).apply {
-            text = if (securePrefs.getString("gemini_api_key", "").isNullOrBlank()) "Ready · add your API key" else "Ready · encrypted key found"
+            text = "Ready · local Gemma available"
             textSize = 13f
             setTextColor(muted)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(Color.rgb(247, 247, 252), 14)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.rgb(247, 247, 252), 16)
         }
-        controlsCard.addView(status)
-        content.addView(controlsCard, margins(bottom = 12))
+        statusCard.addView(status)
+        content.addView(statusCard, margins(bottom = 12))
 
         content.addView(TextView(this).apply {
             text = "Privacy note: your key is saved on this phone using encrypted preferences when available. Visible screen labels and your task are sent to Google Gemini while the agent runs. Never automate passwords, payments, messages, deletion, or private information. Accessibility actions can fail; verify each step."
@@ -847,15 +807,23 @@ class MainActivity : Activity() {
             val verifiedPlan = if (admin) "Admin" else if (claimedPlan == "Pro" || claimedPlan == "Max") claimedPlan else "Free"
             prefs.edit().putBoolean("admin_verified_by_firebase", admin)
                 .putString("verified_plan", verifiedPlan).apply()
-            if (admin) runOnUiThread { showAdminBanner() }
+            runOnUiThread {
+                val signedIn = firebaseAuth?.currentUser
+                if (signedIn != null) {
+                    val label = signedIn.displayName?.takeIf { it.isNotBlank() } ?: signedIn.email ?: "Signed-in user"
+                    status.text = "ACCOUNT · $label · ${verifiedPlan.uppercase(Locale.US)}"
+                }
+                if (admin) showAdminBanner()
+            }
         }.addOnFailureListener {
-            prefs.edit().putBoolean("admin_verified_by_firebase", false).apply()
+            prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
+            runOnUiThread { status.text = "ACCOUNT · ${user.email ?: "Signed-in user"} · ROLE NOT VERIFIED" }
         }
     }
 
     private fun showAccountBanner(user: FirebaseUser) {
         val label = user.displayName?.takeIf { it.isNotBlank() } ?: user.email ?: "Signed-in user"
-        status.text = "Signed in · $label"
+        status.text = "ACCOUNT · $label · ${currentPlan().uppercase(Locale.US)}"
         if (isAdminAccount()) showAdminBanner()
     }
 
@@ -1050,12 +1018,15 @@ class MainActivity : Activity() {
     private fun card(color: Int): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(18), dp(18), dp(18))
-        background = GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(24).toFloat()
-            setStroke(dp(1), if (color == Color.WHITE) Color.rgb(232, 232, 237) else Color.rgb(52, 53, 56))
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            if (color == Color.WHITE) intArrayOf(Color.rgb(255, 255, 255), Color.rgb(246, 248, 255))
+            else intArrayOf(blendWithWhite(color), color)
+        ).apply {
+            cornerRadius = dp(26).toFloat()
+            setStroke(dp(1), Color.rgb(225, 229, 245))
         }
-        elevation = dp(2).toFloat()
+        elevation = dp(5).toFloat()
     }
 
     private fun margins(bottom: Int = 0): LinearLayout.LayoutParams =
@@ -1095,10 +1066,13 @@ class MainActivity : Activity() {
 
     private fun actionButton(title: String, bg: Int, fg: Int) = Button(this).apply {
         val isPrimary = bg == accent || bg == Color.rgb(30, 32, 48)
-        val normalBackground = GradientDrawable().apply {
-            setColor(bg)
-            cornerRadius = dp(14).toFloat()
-            setStroke(dp(1), if (isPrimary) bg else Color.rgb(225, 225, 230))
+        val normalBackground = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            if (isPrimary) intArrayOf(Color.rgb(126, 109, 239), Color.rgb(91, 76, 207))
+            else intArrayOf(Color.WHITE, blendWithWhite(bg))
+        ).apply {
+            cornerRadius = dp(18).toFloat()
+            setStroke(dp(1), if (isPrimary) Color.rgb(112, 96, 222) else Color.rgb(225, 229, 243))
         }
         text = title
         textSize = 13f
