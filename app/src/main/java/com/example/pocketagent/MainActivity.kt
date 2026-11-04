@@ -35,6 +35,10 @@ import com.google.android.gms.common.api.ApiException
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -62,6 +66,10 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.rgb(247, 248, 252)
+        window.navigationBarColor = Color.rgb(247, 248, 252)
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         prefs = getSharedPreferences("pocket_agent", MODE_PRIVATE)
         try {
             if (FirebaseApp.initializeApp(this) != null) {
@@ -93,6 +101,19 @@ class MainActivity : Activity() {
         contentLayout = content
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val bottomNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(7), dp(16), dp(7))
+            setBackgroundColor(Color.WHITE)
+        }
+        val homeTab = actionButton("⌂  Home", Color.rgb(239, 237, 255), accent)
+        homeTab.setOnClickListener { scroll.smoothScrollTo(0, 0) }
+        val connectionsTab = actionButton("⌘  Connections", Color.rgb(247, 248, 252), ink)
+        connectionsTab.setOnClickListener { startActivity(Intent(this, ConnectionsActivity::class.java)) }
+        bottomNav.addView(homeTab, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
+        bottomNav.addView(connectionsTab, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(6) })
+        root.addView(bottomNav, LinearLayout.LayoutParams(-1, dp(64)))
 
         val topBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val menuButton = actionButton("☰  History", Color.rgb(255, 255, 255), ink)
@@ -164,43 +185,43 @@ class MainActivity : Activity() {
         topBar.addView(topStatus, LinearLayout.LayoutParams(0, dp(46), 1f))
         content.addView(topBar, margins(bottom = 10))
 
-        val hero = card(Color.rgb(22, 22, 24)).apply {
+        val hero = card(white).apply {
             setPadding(dp(22), dp(24), dp(22), dp(24))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(27, 28, 31), Color.rgb(12, 13, 15))
+                intArrayOf(Color.rgb(255, 255, 255), Color.rgb(239, 237, 255))
             ).apply {
                 cornerRadius = dp(26).toFloat()
-                setStroke(dp(1), Color.rgb(52, 53, 56))
+                setStroke(dp(1), Color.rgb(226, 222, 250))
             }
-            elevation = dp(3).toFloat()
+            elevation = dp(2).toFloat()
         }
         hero.addView(TextView(this).apply {
-            text = "✦  POCKET AGENT  /  AI ASSISTANT"
+            text = "✦  JARVIS  /  UNIFIED AI AGENT"
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
             letterSpacing = 0.12f
             setTextColor(Color.rgb(120, 184, 255))
         })
         hero.addView(TextView(this).apply {
-            text = "Your screen.\nYour instructions."
+            text = "One agent.\nEvery workflow."
             textSize = 29f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
+            setTextColor(ink)
             setPadding(0, dp(10), 0, dp(5))
         })
         hero.addView(TextView(this).apply {
-            text = "One simple instruction. An assistant that can navigate apps, tap, type, and check each step. You stay in control with clear start, pause, and stop controls."
+            text = "Describe what you want done. JARVIS chooses the right tools, works across supported apps, and checks each action. Start, pause, and stop whenever you need."
             textSize = 14f
-            setTextColor(Color.rgb(190, 190, 196))
+            setTextColor(muted)
             setLineSpacing(dp(4).toFloat(), 1f)
         })
         content.addView(hero, margins(bottom = 14))
 
         val plansCard = card(white)
-        plansCard.addView(sectionTitle("PLANS · FREE / PREMIUM / MAX"))
+        plansCard.addView(sectionTitle("PLANS · FREE / PRO / MAX"))
         plansCard.addView(TextView(this).apply {
-            text = "Free: 60 steps per task. Premium: up to 4 hours per task. Max: no app-imposed step cap. API quota, connection, and safety limits still apply."
+            text = "Free · 500 steps/day. Pro · ₹199/month. Max · ₹499/month, with up to 2 billion theoretical steps/day subject to fair-use and infrastructure safeguards. Admin · unlimited for verified admins."
             textSize = 13f
             setTextColor(muted)
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -212,8 +233,8 @@ class MainActivity : Activity() {
         content.addView(plansCard, margins(bottom = 14))
 
         val setup = card(white)
-        setup.addView(sectionTitle("01  ·  CONNECTION"))
-        setup.addView(label("Gemini API key"))
+        setup.addView(sectionTitle("AI ENGINE · LEGACY PROVIDER SETUP"))
+        setup.addView(label("Temporary developer configuration · Gemini API key"))
         apiKey = field("Paste your Gemini API key once", true).apply {
             setText(securePrefs.getString("gemini_api_key", "").orEmpty())
             setOnFocusChangeListener { _, hasFocus ->
@@ -231,7 +252,7 @@ class MainActivity : Activity() {
             }
         }
         setup.addView(saveKeyButton, margins(bottom = 10))
-        setup.addView(label("Optional backup provider · OpenRouter"))
+        setup.addView(label("Temporary backup provider · OpenRouter"))
         openRouterKey = field("OpenRouter API key (optional)", true).apply {
             setText(securePrefs.getString("openrouter_api_key", "").orEmpty())
             setOnFocusChangeListener { _, hasFocus ->
@@ -310,7 +331,7 @@ class MainActivity : Activity() {
         content.addView(setup, margins(bottom = 14))
 
         val taskCard = card(white)
-        taskCard.addView(sectionTitle("02  ·  YOUR TASK"))
+        taskCard.addView(sectionTitle("YOUR TASK"))
         taskCard.addView(label("What should the agent do?"))
         task = field("Describe your task in plain English", false).apply {
             setText(prefs.getString("last_task", "").orEmpty())
@@ -337,7 +358,7 @@ class MainActivity : Activity() {
         content.addView(taskCard, margins(bottom = 14))
 
         val answerCard = card(white)
-        answerCard.addView(sectionTitle("03  ·  ACTION LOG"))
+        answerCard.addView(sectionTitle("LIVE ACTION LOG"))
         answerView = TextView(this).apply {
             text = "When the agent runs, this area records actions such as “Opened YouTube”, “Tapped Search”, and “Scrolled down”. Gemini text answers are hidden."
             textSize = 14f
@@ -350,7 +371,7 @@ class MainActivity : Activity() {
         content.addView(answerCard, margins(bottom = 14))
 
         val screenCard = card(white)
-        screenCard.addView(sectionTitle("04  ·  SCREEN OBSERVATION"))
+        screenCard.addView(sectionTitle("SCREEN UNDERSTANDING"))
         screenCard.addView(TextView(this).apply {
             text = "Enable the accessibility service, open the app you want to inspect, then return here and refresh."
             textSize = 13f
@@ -387,7 +408,7 @@ class MainActivity : Activity() {
         content.addView(screenCard, margins(bottom = 14))
 
         val controlsCard = card(white)
-        controlsCard.addView(sectionTitle("05  ·  SESSION CONTROL"))
+        controlsCard.addView(sectionTitle("SESSION CONTROL"))
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
