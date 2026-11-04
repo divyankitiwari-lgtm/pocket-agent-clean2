@@ -27,6 +27,7 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
         const val ACTION_SPEAK = "com.example.pocketagent.voice.SPEAK"
         const val ACTION_TASK = "com.example.pocketagent.voice.TASK"
         const val ACTION_FOLLOWUP = "com.example.pocketagent.voice.FOLLOWUP"
+        const val ACTION_STATE = "com.example.pocketagent.voice.STATE"
         const val EXTRA_TEXT = "voice_text"
         private const val CHANNEL_ID = "jarvis_voice_session"
         private const val NOTIFICATION_ID = 731
@@ -39,6 +40,7 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
     private var listening = false
     private var speaking = false
     private var restarting = false
+    private var pendingSpeech = ""
 
     private val prefs by lazy { getSharedPreferences("pocket_agent", MODE_PRIVATE) }
 
@@ -84,6 +86,7 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
             recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { it.setRecognitionListener(this) }
         }
         if (!listening && !speaking) startListening()
+        broadcastState("LISTENING")
     }
 
     private fun startListening() {
@@ -117,10 +120,12 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
             is VoiceCommandParser.Parsed -> when (parsed.kind) {
                 VoiceCommandParser.Kind.PAUSE -> {
                     prefs.edit().putBoolean("agent_paused", true).apply()
+                    broadcastState("PAUSED")
                     speak("Paused. Say continue when you are ready.")
                 }
                 VoiceCommandParser.Kind.RESUME -> {
                     prefs.edit().putBoolean("agent_paused", false).apply()
+                    broadcastState(if (active) "AUTOMATING" else "LISTENING")
                     speak("Continuing the task.")
                 }
                 VoiceCommandParser.Kind.STOP -> {
@@ -128,6 +133,7 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
                         .putBoolean("agent_paused", false)
                         .putString("pending_action", "")
                         .apply()
+                    broadcastState("LISTENING")
                     speak("Stopping the automation.")
                 }
                 VoiceCommandParser.Kind.STATUS -> speak(buildProgressAnswer())
@@ -164,12 +170,14 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
         if (message.isBlank()) return
         val engine = tts
         if (!ttsReady || engine == null) {
+            pendingSpeech = message
             updateNotification(message.take(100))
             return
         }
         try {
             listening = false
             speaking = true
+            broadcastState("SPEAKING")
             try { recognizer?.cancel() } catch (_: Exception) {}
             engine.speak(message, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
             updateNotification("JARVIS is speaking.")
@@ -188,7 +196,10 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
                 override fun onDone(utteranceId: String?) {
                     handler.post {
                         speaking = false
-                        if (prefs.getBoolean("voice_session_requested", false)) startListening()
+                        if (prefs.getBoolean("voice_session_requested", false)) {
+                            broadcastState("LISTENING")
+                            startListening()
+                        }
                     }
                 }
                 override fun onError(utteranceId: String?) {
@@ -198,6 +209,11 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
                     }
                 }
             })
+            if (pendingSpeech.isNotBlank()) {
+                val queued = pendingSpeech
+                pendingSpeech = ""
+                speak(queued)
+            }
             if (prefs.getBoolean("voice_session_requested", false)) startVoiceSession()
         }
     }
@@ -224,6 +240,7 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
 
     private fun stopVoiceSession() {
         prefs.edit().putBoolean("voice_session_requested", false).apply()
+        broadcastState("IDLE")
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
         try { tts?.stop() } catch (_: Exception) {}
@@ -261,6 +278,10 @@ class VoiceSessionService : Service(), RecognitionListener, TextToSpeech.OnInitL
     private fun updateNotification(message: String) {
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(message))
+    }
+
+    private fun broadcastState(value: String) {
+        sendBroadcast(Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_TEXT, value))
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
