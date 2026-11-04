@@ -279,9 +279,7 @@ class MainActivity : Activity() {
             setOrbState(LiquidOrbView.State.IDLE, "VOICE SESSION OFF · TAP TO SPEAK")
             return
         }
-        if (androidx.core.content.ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.RECORD_AUDIO
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 8821)
             return
         }
@@ -362,9 +360,7 @@ class MainActivity : Activity() {
 
     private fun showPermissionOnboardingIfNeeded() {
         val user = firebaseAuth?.currentUser ?: return
-        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-            this, android.Manifest.permission.RECORD_AUDIO
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val micGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val accessibilityReady = prefs.getBoolean("accessibility_connected", false)
         if (!micGranted || !accessibilityReady) showPermissionOnboarding()
         updatePlanPill()
@@ -419,9 +415,7 @@ class MainActivity : Activity() {
             dialog.window?.setLayout(-1, -1)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(116, 230, 219))
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val hasMic = androidx.core.content.ContextCompat.checkSelfPermission(
-                    this, android.Manifest.permission.RECORD_AUDIO
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val hasMic = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 val hasAccess = prefs.getBoolean("accessibility_connected", false)
                 if (hasMic && hasAccess) {
                     permissionDialog = null
@@ -826,6 +820,7 @@ class MainActivity : Activity() {
     private fun showAccountBanner(user: FirebaseUser) {
         updatePlanPill()
         if (::status.isInitialized) status.text = "TAP THE ORB TO TALK"
+        showPermissionOnboardingIfNeeded()
     }
 
     private fun currentPlan(): String {
