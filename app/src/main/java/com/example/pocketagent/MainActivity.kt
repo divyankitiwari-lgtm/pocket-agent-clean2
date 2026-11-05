@@ -30,7 +30,6 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -957,64 +956,25 @@ Keep the answer short and useful. If the question asks for progress, explain the
     }
 
     private fun activateInitialAdmin() {
-        val user = firebaseAuth?.currentUser
-        if (user == null) {
-            status.text = "Sign in first to activate the owner account"
-            return
-        }
-        status.text = "Verifying owner account with Firebase…"
-        FirebaseFunctions.getInstance().getHttpsCallable("bootstrapFirstAdmin").call()
-            .addOnSuccessListener {
-                user.getIdToken(true).addOnSuccessListener {
-                    refreshAdminClaim(user)
-                    status.text = "Admin role activated · token refreshed"
-                    showAdminBanner()
-                }.addOnFailureListener { error ->
-                    status.text = "Admin granted, but token refresh failed: ${error.message}"
-                }
-            }
-            .addOnFailureListener { error ->
-                status.text = "Admin setup denied/failed: ${error.message ?: "check Firebase setup"}"
-            }
+        showSparkAdminHelp("Activate initial admin")
     }
 
     private fun showManageAdminsDialog() {
-        val emailField = field("Existing verified Firebase account email", false)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Manage admin access")
-            .setMessage("Grant or revoke admin access. Only the verified owner account can perform this action.")
-            .setView(emailField)
-            .setPositiveButton("Grant admin", null)
-            .setNeutralButton("Revoke admin", null)
-            .setNegativeButton("Cancel", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                updateAdminRole(emailField.text.toString().trim(), true)
-                dialog.dismiss()
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                updateAdminRole(emailField.text.toString().trim(), false)
-                dialog.dismiss()
-            }
-        }
-        dialog.show()
+        showSparkAdminHelp("Manage admin accounts")
     }
 
-    private fun updateAdminRole(email: String, makeAdmin: Boolean) {
-        if (email.isBlank()) {
-            status.text = "Enter the Firebase account email"
-            return
-        }
-        FirebaseFunctions.getInstance().getHttpsCallable("setAdminRole")
-            .call(hashMapOf("email" to email, "admin" to makeAdmin))
-            .addOnSuccessListener {
-                status.text = if (makeAdmin) "Admin access granted · ask that user to sign in again"
-                    else "Admin access revoked · ask that user to sign in again"
-            }
-            .addOnFailureListener { error ->
-                status.text = "Could not update admin: ${error.message ?: "check owner permissions"}"
-            }
+    private fun showSparkAdminHelp(title: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(
+                "This Firebase project uses the Spark-compatible local admin tool. " +
+                "For security, the app cannot grant its own admin role. " +
+                "On your trusted device, follow docs/SPARK_ADMIN_SETUP.md in the JARVIS repository. " +
+                "Run the bootstrap command once for the verified owner. Later, use the grant or revoke command. " +
+                "Never put serviceAccountKey.json in GitHub or inside this APK."
+            )
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun showAccountBanner(user: FirebaseUser) {
