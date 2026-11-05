@@ -67,6 +67,7 @@ class MainActivity : Activity() {
     private var gemmaEngine: GemmaEngine? = null
     private var homeRoot: View? = null
     private var authScreenVisible = false
+    private var permissionScreenVisible = false
     private var authFeedback: TextView? = null
 
     private val ink = Color.rgb(31, 38, 58)
@@ -393,77 +394,132 @@ Keep the answer short and useful. If the question asks for progress, explain the
             .show()
     }
 
+    private fun accessibilityServiceEnabled(): Boolean {
+        val expected = android.content.ComponentName(this, AgentAccessibilityService::class.java).flattenToString()
+        val enabled = android.provider.Settings.Secure.getString(contentResolver,
+            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
+    private fun syncPermissionState(): Triple<Boolean, Boolean, Boolean> {
+        val mic = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val accessibility = accessibilityServiceEnabled()
+        val speech = android.speech.SpeechRecognizer.isRecognitionAvailable(this)
+        prefs.edit().putBoolean("accessibility_connected", accessibility)
+            .putString("accessibility_status", if (accessibility) "connected" else "disabled").apply()
+        return Triple(mic, accessibility, speech)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!::prefs.isInitialized || authScreenVisible || firebaseAuth?.currentUser == null) return
+        val (mic, accessibility, speech) = syncPermissionState()
+        if (!mic || !accessibility || !speech) showPermissionOnboarding()
+        else if (permissionScreenVisible) {
+            permissionScreenVisible = false
+            homeRoot?.let { setContentView(it) }
+            updatePlanPill()
+        }
+    }
+
     private fun showPermissionOnboardingIfNeeded() {
-        val user = firebaseAuth?.currentUser ?: return
-        val micGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val accessibilityReady = prefs.getBoolean("accessibility_connected", false)
-        if (!micGranted || !accessibilityReady) showPermissionOnboarding()
+        if (firebaseAuth?.currentUser == null) return
+        val (mic, accessibility, speech) = syncPermissionState()
+        if (!mic || !accessibility || !speech) showPermissionOnboarding()
+        else {
+            permissionScreenVisible = false
+            homeRoot?.let { setContentView(it) }
+        }
         updatePlanPill()
     }
 
-    private fun showPermissionOnboarding() {
-        if (permissionDialog?.isShowing == true) return
-        val panel = LinearLayout(this).apply {
+    private fun permissionRow(title: String, description: String, enabled: Boolean): View {
+        val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(12), dp(22), dp(10))
-            background = glassSurface(26)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = glassSurface(20)
         }
-        panel.addView(TextView(this).apply {
-            text = "ONE LAST SETUP"
-            textSize = 11f
-            letterSpacing = 0.15f
+        row.addView(TextView(this).apply {
+            text = title + if (enabled) "  ·  ENABLED" else "  ·  REQUIRED"
+            textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(104, 226, 218))
-        }, margins(bottom = 10))
-        panel.addView(TextView(this).apply {
-            text = "JARVIS needs microphone access to hear your voice commands, and Accessibility access to understand and control visible app interfaces when you ask it to."
-            textSize = 14f
-            setTextColor(Color.rgb(218, 231, 239))
-            setLineSpacing(dp(4).toFloat(), 1f)
-        }, margins(bottom = 18))
-        val mic = actionButton("Allow microphone", Color.rgb(27, 104, 112), Color.WHITE).apply {
-            setOnClickListener {
-                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 8821)
-            }
-        }
-        val access = actionButton("Enable app control", Color.rgb(24, 38, 55), Color.rgb(207, 236, 241)).apply {
-            setOnClickListener {
-                startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-        }
-        panel.addView(mic, margins(bottom = 9))
-        panel.addView(access, margins(bottom = 9))
-        panel.addView(TextView(this).apply {
-            text = "You stay in control. Voice listening starts only when you tap the JARVIS orb."
+            setTextColor(if (enabled) Color.rgb(109, 226, 197) else Color.rgb(255, 164, 139))
+        }, margins(bottom = 5))
+        row.addView(TextView(this).apply {
+            text = description
             textSize = 11f
-            setTextColor(Color.rgb(145, 172, 186))
+            setTextColor(Color.rgb(165, 183, 201))
         })
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("JARVIS PERMISSIONS")
-            .setView(panel)
-            .setPositiveButton("Continue", null)
-            .setCancelable(false)
-            .create()
-        permissionDialog = dialog
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
-            dialog.window?.setLayout(-1, -1)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(116, 230, 219))
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val hasMic = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                val hasAccess = prefs.getBoolean("accessibility_connected", false)
-                if (hasMic && hasAccess) {
-                    permissionDialog = null
-                    dialog.dismiss()
-                    updatePlanPill()
-                } else {
-                    status.text = "ENABLE BOTH PERMISSIONS TO CONTINUE"
-                }
-            }
+        return row
+    }
+
+    private fun showPermissionOnboarding() {
+        permissionScreenVisible = true
+        val (micGranted, accessibilityReady, speechReady) = syncPermissionState()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(22), dp(24), dp(22), dp(24))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(2, 4, 9), Color.rgb(8, 13, 24), Color.rgb(2, 4, 9)))
         }
-        dialog.show()
-        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
-        dialog.window?.setLayout(-1, -1)
+        root.addView(TextView(this).apply {
+            text = "J A R V I S"; textSize = 16f; letterSpacing = 0.28f
+            typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+            setTextColor(Color.rgb(221, 239, 255))
+        }, LinearLayout.LayoutParams(-1, dp(54)))
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(24), dp(20), dp(20))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.argb(205, 25, 35, 51), Color.argb(155, 8, 14, 26))).apply {
+                cornerRadius = dp(28).toFloat()
+                setStroke(dp(1), Color.argb(125, 158, 206, 235))
+            }
+            elevation = dp(14).toFloat()
+        }
+        card.addView(TextView(this).apply {
+            text = "Prepare your assistant"; textSize = 25f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            gravity = Gravity.CENTER; setTextColor(Color.rgb(245, 249, 255))
+        }, margins(bottom = 7))
+        card.addView(TextView(this).apply {
+            text = "These permissions let JARVIS hear you and control visible app screens only when you ask it to."
+            textSize = 12f; gravity = Gravity.CENTER; setTextColor(Color.rgb(159, 180, 201))
+        }, margins(bottom = 20))
+        card.addView(permissionRow("Microphone", "Required for voice commands and spoken interaction.", micGranted), margins(bottom = 9))
+        card.addView(permissionRow("Accessibility app control", "Required to inspect visible controls, open apps and perform taps or scrolling.", accessibilityReady), margins(bottom = 9))
+        card.addView(permissionRow("Speech recognition", "Uses the speech service available on this Android device.", speechReady), margins(bottom = 16))
+        card.addView(actionButton(if (micGranted) "Microphone enabled" else "Allow microphone",
+            Color.rgb(27, 103, 113), Color.WHITE).apply {
+            isEnabled = !micGranted; alpha = if (micGranted) 0.65f else 1f
+            setOnClickListener { requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 8821) }
+        }, margins(bottom = 9))
+        card.addView(actionButton(if (accessibilityReady) "Accessibility enabled" else "Enable app control",
+            Color.rgb(23, 39, 57), Color.rgb(221, 240, 248)).apply {
+            isEnabled = !accessibilityReady; alpha = if (accessibilityReady) 0.65f else 1f
+            setOnClickListener { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }, margins(bottom = 9))
+        card.addView(TextView(this).apply {
+            text = if (!speechReady) "Speech recognition is unavailable. Check that a speech recognition service is installed and enabled."
+                else "You remain in control. JARVIS does not start listening until you tap its orb."
+            textSize = 11f; gravity = Gravity.CENTER
+            setTextColor(if (speechReady) Color.rgb(151, 179, 196) else Color.rgb(255, 164, 139))
+        }, margins(bottom = 14))
+        card.addView(actionButton("Continue to JARVIS  →", Color.rgb(33, 191, 190), Color.rgb(3, 20, 28)).apply {
+            isEnabled = micGranted && accessibilityReady && speechReady
+            alpha = if (isEnabled) 1f else 0.45f
+            setOnClickListener {
+                val (micNow, accessNow, speechNow) = syncPermissionState()
+                if (micNow && accessNow && speechNow) {
+                    permissionScreenVisible = false
+                    homeRoot?.let { setContentView(it) }
+                    updatePlanPill()
+                } else showPermissionOnboarding()
+            }
+        })
+        root.addView(card, LinearLayout.LayoutParams(-1, -2))
+        setContentView(root)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -503,8 +559,9 @@ Keep the answer short and useful. If the question asks for progress, explain the
                             status.text = "Google sign-in returned no Firebase user"
                             return@addOnSuccessListener
                         }
-                        welcomeDialog?.dismiss()
-                        welcomeDialog = null
+                        authScreenVisible = false
+                        authFeedback = null
+                        homeRoot?.let { setContentView(it) }
                         refreshAdminClaim(user)
                         showAccountBanner(user)
                         status.text = "Signed in with Google"
