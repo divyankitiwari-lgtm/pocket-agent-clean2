@@ -66,8 +66,6 @@ class MainActivity : Activity() {
     private var voiceReceiverRegistered = false
     private var firebaseAuth: FirebaseAuth? = null
     private var firestore: FirebaseFirestore? = null
-    // Keep the on-device model loaded between agent steps; loading a ~500 MB model every step is too slow.
-    private var gemmaEngine: GemmaEngine? = null
     private var homeRoot: View? = null
     private var authScreenVisible = false
     private var permissionScreenVisible = false
@@ -185,7 +183,7 @@ class MainActivity : Activity() {
         val hidden = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         modeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item,
-                listOf("Cloud AI", "Bundled Gemma · offline", "Local rules")).also {
+                listOf("Cloud AI", "Local rules")).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
             setSelection(0)
@@ -334,7 +332,7 @@ class MainActivity : Activity() {
     }
 
     private fun answerVoiceQuestion(question: String) {
-        setOrbState(LiquidOrbView.State.THINKING, "GEMMA IS THINKING · ON DEVICE")
+        setOrbState(LiquidOrbView.State.THINKING, "JARVIS IS THINKING")
         Thread {
             val prompt = """
 You are JARVIS, a helpful voice assistant running locally on an Android device.
@@ -344,16 +342,16 @@ If you are unsure or the question needs current information, say so plainly.
 User question: $question
 """.trimIndent()
             val response = try {
-                val result = MultiProviderAiClient(applicationContext).generate(prompt, getSharedPreferences("jarvis_ai_settings", MODE_PRIVATE).getBoolean("local_model_fallback", true))
+                val result = MultiProviderAiClient(applicationContext).generate(prompt)
                 logCommunication("VOICE AI ROUTE", "${result.providerLabel} · ${result.model}")
                 result.text.trim().take(900).ifBlank { "The selected AI provider returned an empty answer." }
             } catch (error: Exception) {
                 logCommunication("VOICE AI ERROR", error.message ?: error.javaClass.simpleName)
-                "I could not get a response from the configured AI providers or local model. Please check AI provider settings."
+                "I could not get a response from the configured AI providers. Please check AI provider settings."
             }
             runOnUiThread {
                 answerView.text = response
-                saveHistory(question, "Gemma 3 1B · on-device", response)
+                saveHistory(question, "AI provider", response)
                 logCommunication("VOICE ANSWER", response)
                 setOrbState(LiquidOrbView.State.SPEAKING, "JARVIS IS ANSWERING")
                 speakThroughVoiceService(response)
@@ -591,130 +589,12 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }
     }
 
-    private fun localModelFile(): File = File(filesDir, "pocket-agent-local-model.task")
-
-    @Deprecated("Use document picker")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 7413) {
-            if (resultCode != RESULT_OK || data == null) {
-                status.text = "Google sign-in was cancelled or did not return an account."
-                AlertDialog.Builder(this)
-                    .setTitle("Google sign-in didn't finish")
-                    .setMessage("Google returned without signing you in. If you selected your account and came back here, check the Firebase Google provider and the SHA-1 certificate for this exact APK. Try again after checking the setup.")
-                    .setPositiveButton("OK", null)
-                    .show()
-                return
-            }
-            try {
-                val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
-                val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-                firebaseAuth?.signInWithCredential(credential)
-                    ?.addOnSuccessListener { result ->
-                        val user = result.user
-                        if (user == null) {
-                            status.text = "Google sign-in returned no Firebase user"
-                            return@addOnSuccessListener
-                        }
-                        authScreenVisible = false
-                        authFeedback = null
-                        homeRoot?.let { setContentView(it) }
-                        refreshAdminClaim(user)
-                        showAccountBanner(user)
-                        status.text = "Signed in with Google"
-                        val profile = hashMapOf<String, Any>(
-                            "displayName" to (user.displayName ?: account.displayName ?: "JARVIS user"),
-                            "email" to (user.email ?: account.email.orEmpty()),
-                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
-                        )
-                        firestore?.collection("users")?.document(user.uid)
-                            ?.set(profile, SetOptions.merge())
-                            ?.addOnFailureListener { error ->
-                                status.text = "Google sign-in succeeded; profile sync failed: " + (error.message ?: "check Firestore rules")
-                            }
-                    }
-                    ?.addOnFailureListener { error ->
-                        val message = "Firebase Google sign-in failed: " + (error.message ?: "check provider setup")
-                        status.text = message
-                        AlertDialog.Builder(this)
-                            .setTitle("Google sign-in failed")
-                            .setMessage(message + "\n\nCheck that Google is enabled in Firebase Authentication and that the SHA-1 certificate for this APK is registered in Firebase.")
-                            .setPositiveButton("OK", null)
-                            .show()
-                    }
-            } catch (error: Exception) {
-                val message = "Google sign-in failed: " + (error.message ?: "check Firebase OAuth setup")
-                status.text = message
-                AlertDialog.Builder(this)
-                    .setTitle("Google sign-in failed")
-                    .setMessage(message)
-                    .setPositiveButton("OK", null)
-                    .show()
-            }
-            return
-        }
-        if (requestCode != 7412 || resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        status.text = "Importing local model…"
-        Thread {
-            try {
-                contentResolver.openInputStream(uri).use { input ->
-                    if (input == null) throw IllegalStateException("Could not read selected model file.")
-                    localModelFile().outputStream().use { output -> input.copyTo(output) }
-                }
-                runOnUiThread {
-                    status.text = "Local model imported · " + (localModelFile().length() / (1024 * 1024)) + " MB"
-                    logCommunication("LOCAL MODEL", "Imported model file to app-private storage.")
-                }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "Model import failed: " + (e.message ?: "unknown error") }
-            }
-        }.start()
-    }
-
-    private fun ensureGemmaModelBundled(): File {
-        val target = localModelFile()
-        if (target.isFile && target.length() > 100_000_000L) return target
-        val temp = File(filesDir, "gemma3-1b-it-int4.task.copying")
-        try {
-            assets.open("gemma3-1b-it-int4.task").use { input ->
-                temp.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(1024 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        if (count > 0) output.write(buffer, 0, count)
-                    }
-                }
-            }
-            check(temp.length() > 100_000_000L) { "Bundled Gemma model is missing or incomplete in this APK." }
-            if (target.exists()) target.delete()
-            check(temp.renameTo(target)) { "Could not prepare bundled Gemma model in app storage." }
-            runOnUiThread { status.text = "Bundled Gemma model ready · running locally" }
-            return target
-        } catch (error: Exception) {
-            temp.delete()
-            throw error
-        }
-    }
-    @Synchronized
-    private fun generateLocalAi(prompt: String): String {
-        val modelFile = ensureGemmaModelBundled()
-        val engine = gemmaEngine ?: GemmaEngine(applicationContext, modelFile).also {
-            gemmaEngine = it
-            logCommunication("LOCAL AI", "Gemma runtime loaded from app-private model storage.")
-        }
-        return engine.generate(prompt)
-    }
-
     override fun onDestroy() {
         if (voiceReceiverRegistered) {
             try { unregisterReceiver(voiceReceiver) } catch (_: Exception) {}
             voiceReceiverRegistered = false
         }
         // Keep the user-started voice foreground service alive while another app is in front.
-        try { gemmaEngine?.close() } catch (_: Exception) {}
-        gemmaEngine = null
         super.onDestroy()
     }
 
@@ -1480,9 +1360,8 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }
         if (mode == 0) {
             val hasConfiguredSlot = try { com.example.pocketagent.ai.AiProviderStore(this).enabledSlots().isNotEmpty() } catch (_: Exception) { false }
-            val localFallbackReady = getSharedPreferences("jarvis_ai_settings", MODE_PRIVATE).getBoolean("local_model_fallback", true) && File(filesDir, "pocket-agent-local-model.task").isFile
-            if (!hasConfiguredSlot && !localFallbackReady) {
-                status.text = "Configure an API slot or import a local model in Settings → AI providers & models"
+            if (!hasConfiguredSlot) {
+                status.text = "Configure an API provider and key in Settings → AI providers & models"
                 return
             }
         }
@@ -1574,36 +1453,19 @@ Visible screen text:
 ${if (mode == 0 && !shareScreenText) "[OMITTED: screen-text sharing is disabled. Do not guess visible controls; ask the user to enable screen sharing or choose a local mode.]" else screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
 """.trimIndent()
-                    val raw = when (mode) {
-                        1 -> {
-                            // Use the actual MediaPipe runtime for local inference; fall back to explicit
-                            // local rules only when the selected model cannot load or produce a response.
-                            try {
-                                logCommunication("LOCAL AI", "Running the imported .task model on-device.")
-                                generateLocalAi(instruction)
-                            } catch (localError: Exception) {
-                                logCommunication("LOCAL AI FALLBACK", "On-device inference failed: " +
-                                    (localError.message ?: localError.javaClass.simpleName) +
-                                    ". Falling back to local rules; no cloud request was made.")
-                                localRulePlan(userTask, screen, lastResult)
-                            }
-                        }
-                        2 -> localRulePlan(userTask, screen, lastResult)
-                        else -> {
-                            val result = MultiProviderAiClient(applicationContext).generate(instruction, getSharedPreferences("jarvis_ai_settings", MODE_PRIVATE).getBoolean("local_model_fallback", true))
-                            logCommunication("AI ROUTE", "Slot ${result.slot} · ${result.providerLabel} · ${result.model}" + if (result.usedLocalModel) " · local fallback" else "")
-                            result.text
-                        }
+                    val raw = if (mode == 1) {
+                        localRulePlan(userTask, screen, lastResult)
+                    } else {
+                        val result = MultiProviderAiClient(applicationContext).generate(instruction)
+                        logCommunication("AI ROUTE", "Slot ${result.slot} · ${result.providerLabel} · ${result.model}")
+                        result.text
                     }
                     val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value
                     val command = try {
                         if (match != null) JSONObject(match)
                         else throw IllegalStateException("Planner did not return action JSON.")
                     } catch (parseError: Exception) {
-                        if (mode == 1) {
-                            logCommunication("LOCAL AI FALLBACK", "Local model response was not valid action JSON. Trying safe local rules for this step.")
-                            JSONObject(localRulePlan(userTask, screen, lastResult))
-                        } else throw IllegalStateException("Planner did not return valid action JSON.")
+                        throw IllegalStateException("Planner did not return valid action JSON.")
                     }
                     val action = command.optString("action", "ask_user")
                     val textValue = command.optString("text", "")
@@ -1771,26 +1633,17 @@ Previous action result: ${lastResult.take(500)}
 
         askButton.isEnabled = false
         askButton.text = "Working…"
-        status.text = when (mode) { 1 -> "Running local AI on this phone…"; 2 -> "Planning with local rules…"; else -> "Sending request to cloud AI…" }
+        status.text = if (mode == 1) "Planning with local rules…" else "Sending request to cloud AI…"
         logCommunication("REQUEST", "Mode: " + modeSpinner.selectedItem.toString() + "\nModel: " + chosenModel + "\nTask: " + userTask.take(500))
-        answerView.text = if (mode == 2) "Using local rules. No API or model required." else if (mode == 1) "Running inference locally; no task text is sent to cloud AI." else "Waiting for cloud AI response. Keep this screen open."
+        answerView.text = if (mode == 1) "Using local rules. No model or API required." else "Waiting for cloud AI response. Keep this screen open."
         Thread {
             var connection: HttpURLConnection? = null
             try {
-                if (mode != 0) {
-                    val localResponse = if (mode == 1) {
-                        try {
-                            generateLocalAi(prompt)
-                        } catch (localError: Exception) {
-                            logCommunication("LOCAL AI FALLBACK", "Model inference failed: " +
-                                (localError.message ?: localError.javaClass.simpleName))
-                            "On-device model could not run: " + (localError.message ?: "unknown model/runtime error") +
-                                "\\n\\nTry a compatible MediaPipe .task model, or switch to Local Rules mode. No cloud request was sent."
-                        }
-                    } else localRulePlan(userTask, screen, "")
+                if (mode == 1) {
+                    val localResponse = localRulePlan(userTask, screen, "")
                     runOnUiThread {
                         answerView.text = localResponse
-                        status.text = if (mode == 1) "On-device model attempt finished · no API used" else "Local rules response · no API used"
+                        status.text = "Local rules response · no AI model used"
                         saveHistory(userTask, modeSpinner.selectedItem.toString(), localResponse)
                     }
                     return@Thread
