@@ -730,7 +730,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         val success = result.startsWith("Opened app:", true) ||
             result.startsWith("Tapped visible control:", true) ||
             result.startsWith("Tap gesture completed:", true) ||
-            result.startsWith("Accessibility click accepted:", true) ||
             result.startsWith("Scrolled down", true) ||
             result.startsWith("Scrolled up", true) ||
             result.startsWith("Pressed Back", true) ||
