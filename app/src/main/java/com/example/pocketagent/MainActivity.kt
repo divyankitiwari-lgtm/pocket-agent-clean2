@@ -1470,6 +1470,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
                          (requestedApp.isBlank() || !screen.contains(requestedApp, ignoreCase = true)))
                     if (requestedApp.isNotBlank() && screenLooksLikeAgent && !launchAttempted) {
                         launchAttempted = true
+                        val screenBeforeLaunch = prefs.getString("latest_screen_text", "").orEmpty()
                         val bootstrapAction = JSONObject().put("action", "open_app").put("text", requestedApp).toString()
                         prefs.edit().putString("last_action_result", "").putString("pending_action", bootstrapAction).apply()
                         logCommunication("BOOTSTRAP", "Launching the app explicitly named by the user: " + requestedApp)
@@ -1479,16 +1480,26 @@ Keep the answer short and useful. If the question asks for progress, explain the
                         }
                         var waitedForLaunch = 0
                         var launchResult = ""
+                        var launchScreenChanged = false
                         while (agentRunning && prefs.getBoolean("session_active", false) && waitedForLaunch < 8000) {
                             launchResult = prefs.getString("last_action_result", "").orEmpty()
-                            if (launchResult.isNotBlank()) break
+                            val visibleNow = prefs.getString("latest_screen_text", "").orEmpty()
+                            launchScreenChanged = visibleNow.isNotBlank() && visibleNow != screenBeforeLaunch
+                            if (launchScreenChanged || launchResult.startsWith("Could not find", true) || launchResult.startsWith("Open app failed:", true)) break
                             Thread.sleep(200)
                             waitedForLaunch += 200
                         }
-                        lastResult = launchResult.ifBlank { "No confirmation received from Accessibility Service while opening " + requestedApp + "." }
+                        lastResult = if (launchScreenChanged) "Opened app: " + requestedApp + " · screen change verified"
+                            else "App launch not verified: " + (launchResult.ifBlank { "no visible screen change was reported by Accessibility Service" })
+                        prefs.edit().putString("last_action_result", lastResult).apply()
                         logCommunication("BOOTSTRAP RESULT", lastResult)
                         runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
-                        Thread.sleep(1200)
+                        if (!launchScreenChanged) {
+                            runOnUiThread { setOrbState(LiquidOrbView.State.ERROR, "APP OPENING COULD NOT BE VERIFIED") }
+                            speakThroughVoiceService("I could not verify that " + requestedApp + " opened. Please check the app and try again.")
+                            break
+                        }
+                        Thread.sleep(500)
                         screen = prefs.getString("latest_screen_text", "").orEmpty()
                     }
                     val instruction = """
