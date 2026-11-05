@@ -79,6 +79,8 @@ jobs:
           SIZE=$(stat -c%s "$MODEL")
           if [ "$SIZE" -lt 100000000 ]; then echo "Gemma model download incomplete: $SIZE bytes" >&2; exit 1; fi
           echo "Bundled Gemma model size: $(du -h "$MODEL" | cut -f1)"
+      - name: Run JARVIS unit tests
+        run: gradle --no-daemon testDebugUnitTest
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Print debug signing certificate fingerprint
