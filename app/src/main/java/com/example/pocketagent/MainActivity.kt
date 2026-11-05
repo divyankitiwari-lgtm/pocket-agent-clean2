@@ -428,7 +428,22 @@ Keep the answer short and useful. If the question asks for progress, explain the
                 else -> "TAP THE ORB TO TALK"
             }
         }
-    } orientation = LinearLayout.VERTICAL
+    }
+
+    private fun showPermissionOnboardingIfNeeded() {
+        if (firebaseAuth?.currentUser == null) return
+        val (mic, accessibility, speech) = syncPermissionState()
+        if (!mic || !accessibility || !speech) showPermissionOnboarding()
+        else {
+            permissionScreenVisible = false
+            homeRoot?.let { setContentView(it) }
+        }
+        updatePlanPill()
+    }
+
+    private fun permissionRow(title: String, description: String, enabled: Boolean): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
             background = glassSurface(20)
         }
@@ -1303,6 +1318,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
         (Color.green(color) + 255) / 2,
         (Color.blue(color) + 255) / 2
     )
+
 
 
     private fun refreshScreenText() {
