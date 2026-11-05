@@ -3,7 +3,7 @@ name: Build JARVIS Android APK
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "rebuild/**"]
+    branches: ["main", "rebuild/**", "jarvis/**"]
   # Nightly regression build at 03:00 India Standard Time (21:30 UTC); APKs are retained for 14 days.
   schedule:
     - cron: "30 21 * * *"
