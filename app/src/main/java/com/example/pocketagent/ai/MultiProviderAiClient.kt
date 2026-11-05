@@ -26,14 +26,29 @@ class MultiProviderAiClient(private val context:Context) {
    } catch(e:Exception) { failures+="Slot $index (${spec.label}): ${safeMessage(e)}" }
   }
   if(includeLocalFallback) try {
-   val file=File(context.filesDir,"pocket-agent-local-model.task")
-   if(file.isFile && file.length()>100_000_000L) {
+   val file=ensureLocalModelFile()
+   if(file!=null && file.isFile && file.length()>100_000_000L) {
     val engine=GemmaEngine(context.applicationContext,file)
     try { val answer=engine.generate(prompt).trim(); if(answer.isNotBlank()) return AiGenerationResult(answer,"On-device Gemma","Imported MediaPipe .task model",0,true) }
     finally { engine.close() }
    }
   } catch(e:Exception){failures+="Local Gemma: ${safeMessage(e)}"}
   throw IllegalStateException(if(failures.isEmpty()) "No provider enabled. Configure an API slot or import a local model." else "All AI routes failed: "+failures.joinToString(" | "))
+ }
+ private fun ensureLocalModelFile():File? {
+  val target=File(context.filesDir,"pocket-agent-local-model.task")
+  if(target.isFile && target.length()>100_000_000L)return target
+  val temp=File(context.filesDir,"gemma3-1b-it-int4.task.copying")
+  return try {
+   context.assets.open("gemma3-1b-it-int4.task").use{input->
+    temp.outputStream().buffered().use{output->
+     val buffer=ByteArray(1024*1024)
+     while(true){val count=input.read(buffer);if(count<0)break;if(count>0)output.write(buffer,0,count)}
+    }
+   }
+   if(temp.length()<=100_000_000L){temp.delete();null}
+   else {if(target.exists())target.delete();if(temp.renameTo(target))target else null}
+  } catch(_:Exception){temp.delete();null}
  }
  private fun safeMessage(e:Exception)=(e.message?:e.javaClass.simpleName).replace(Regex("(?i)(key|token|authorization)[=: ]+[^ ,;]+"),"\$1=[redacted]").take(180)
  private fun request(spec:AiProviderSpec,slot:AiSlot,prompt:String):String {
