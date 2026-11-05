@@ -21,7 +21,6 @@ import com.example.pocketagent.ai.AiProviderCatalog
 import com.example.pocketagent.ai.AiProviderStore
 import com.example.pocketagent.ai.AiSlot
 import com.example.pocketagent.ai.MultiProviderAiClient
-import java.io.File
 
 class AiModelsActivity : Activity() {
  private lateinit var store:AiProviderStore
@@ -32,7 +31,6 @@ class AiModelsActivity : Activity() {
  private lateinit var keyField:EditText
  private lateinit var baseUrlField:EditText
  private lateinit var enabledSwitch:Switch
- private lateinit var localSwitch:Switch
  private lateinit var status:TextView
  private var currentSlot=1
  private val ink=Color.rgb(235,243,255)
@@ -49,7 +47,7 @@ class AiModelsActivity : Activity() {
   header.addView(text("AI PROVIDERS & MODELS",19,ink,true),LinearLayout.LayoutParams(0,dp(48),1f))
   header.addView(button("Done"){finish()})
   root.addView(header)
-  root.addView(text("Four independent API slots. JARVIS tries enabled slots in order, then the optional local model.",12,muted),margins(14))
+  root.addView(text("Four independent API slots. JARVIS tries enabled providers in order.",12,muted),margins(14))
   val card=glassCard()
   card.addView(label("FALLBACK SLOT"))
   slotSpinner=spinner((1..4).map{"Slot $it"});card.addView(slotSpinner,margins(12))
@@ -65,13 +63,6 @@ class AiModelsActivity : Activity() {
   baseUrlField=edit("Provider default URL",false);card.addView(baseUrlField,margins(12))
   enabledSwitch=Switch(this).apply{text="Enable this fallback slot";setTextColor(ink)}
   card.addView(enabledSwitch,margins(10));root.addView(card,margins(14))
-  val local=glassCard()
-  local.addView(label("OPTIONAL LOCAL MODEL"))
-  localSwitch=Switch(this).apply{text="Try imported Gemma after API slots fail";setTextColor(ink);isChecked=getSharedPreferences("jarvis_ai_settings",MODE_PRIVATE).getBoolean("local_model_fallback",true)}
-  local.addView(localSwitch,margins(8))
-  local.addView(text("Import a compatible MediaPipe .task model. Local inference is independent of API keys and may require substantial RAM and storage.",11,muted),margins(8))
-  local.addView(button("Import local .task model"){chooseModelFile()},margins(8))
-  root.addView(local,margins(14))
   status=text("Keys are stored with Android encrypted preferences. Never share screenshots containing keys.",11,muted)
   root.addView(status,margins(10))
   root.addView(button("Save current slot"){saveCurrent()},margins(8))
@@ -112,33 +103,12 @@ class AiModelsActivity : Activity() {
   try{store.save(currentSlot,slot);if(show)status.text="Slot $currentSlot saved securely."}catch(e:Exception){status.text=e.message?:"Secure save failed."}
  }
  private fun testChain(){
-  saveCurrent(false);getSharedPreferences("jarvis_ai_settings",MODE_PRIVATE).edit().putBoolean("local_model_fallback",localSwitch.isChecked).apply()
+  saveCurrent(false)
   status.text="Testing providers in fallback order…"
   Thread{try{
-   val result=MultiProviderAiClient(applicationContext).generate("Reply with exactly: JARVIS connection test successful.",localSwitch.isChecked)
+   val result=MultiProviderAiClient(applicationContext).generate("Reply with exactly: JARVIS connection test successful.")
    runOnUiThread{status.text="Success: ${result.providerLabel} · ${result.model} · slot ${result.slot}"}
   }catch(e:Exception){runOnUiThread{status.text=e.message?:"All configured routes failed."}}}.start()
- }
- private fun chooseModelFile(){
-  val i=android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply{type="*/*";addCategory(android.content.Intent.CATEGORY_OPENABLE)}
-  startActivityForResult(i,7412)
- }
- @Deprecated("Document picker callback")
- override fun onActivityResult(requestCode:Int,resultCode:Int,data:android.content.Intent?){
-  super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode!=7412||resultCode!=RESULT_OK)return
-  val uri=data?.data?:return;status.text="Importing model…"
-  Thread{try{
-   contentResolver.openInputStream(uri).use{input->
-    requireNotNull(input){"Cannot read selected file."}
-    val temp=File(filesDir,"pocket-agent-local-model.task.copying")
-    temp.outputStream().buffered().use{output->input.copyTo(output)}
-    require(temp.length()>100_000_000L){"File is too small to be the expected Gemma model."}
-    val target=File(filesDir,"pocket-agent-local-model.task");if(target.exists())target.delete()
-    check(temp.renameTo(target)){"Could not move model into private storage."}
-   }
-   runOnUiThread{status.text="Model imported. It will be tried after API slots."}
-  }catch(e:Exception){runOnUiThread{status.text=e.message?:"Import failed."}}}.start()
  }
  private fun glassCard()=LinearLayout(this).apply{
   orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(16),dp(16),dp(16))
