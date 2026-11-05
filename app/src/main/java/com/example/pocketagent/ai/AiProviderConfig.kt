@@ -20,7 +20,7 @@ object AiProviderCatalog {
   AiProviderSpec("together","Together AI",AiProtocol.OPENAI_COMPATIBLE,"https://api.together.xyz/v1",listOf("meta-llama/Llama-3.3-70B-Instruct-Turbo","Qwen/Qwen2.5-72B-Instruct-Turbo")),
   AiProviderSpec("mistral","Mistral",AiProtocol.OPENAI_COMPATIBLE,"https://api.mistral.ai/v1",listOf("mistral-small-latest","mistral-large-latest","codestral-latest")),
   AiProviderSpec("deepseek","DeepSeek",AiProtocol.OPENAI_COMPATIBLE,"https://api.deepseek.com/v1",listOf("deepseek-chat","deepseek-reasoner")),
-  AiProviderSpec("ollama","Ollama local server",AiProtocol.OLLAMA,"http://127.0.0.1:11434",listOf("qwen2.5:3b","llama3.2:3b","gemma3:1b"),false)
+  AiProviderSpec("ollama","Ollama local server",AiProtocol.OLLAMA,"http://127.0.0.1:11434",listOf("qwen2.5:3b","llama3.2:3b"),false)
  )
  fun byId(id:String)=providers.firstOrNull{it.id==id}?:providers.first()
 }
