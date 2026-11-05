@@ -834,9 +834,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         panel.addView(actionButton("Report a bug", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
             setOnClickListener { showBugReportForm() }
         }, margins(bottom = 8))
-        panel.addView(actionButton("Review bug reports", Color.rgb(235, 250, 240), Color.rgb(20, 110, 65)).apply {
-            setOnClickListener { showAdminBugInbox() }
-        }, margins(bottom = 8))
         contentLayout.addView(panel, 0, LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(dp(16), dp(8), dp(16), dp(12))
         })
