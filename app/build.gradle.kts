@@ -27,7 +27,6 @@ android {
 
 dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("com.google.mediapipe:tasks-genai:0.10.27")
     implementation(platform("com.google.firebase:firebase-bom:34.4.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
