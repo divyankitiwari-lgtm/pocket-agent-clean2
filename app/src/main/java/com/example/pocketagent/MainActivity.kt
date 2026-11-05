@@ -944,6 +944,8 @@ Keep the answer short and useful. If the question asks for progress, explain the
                 .putString("verified_plan", verifiedPlan).apply()
             runOnUiThread {
                 updatePlanPill()
+                if (admin) showAdminBanner()
+                else contentLayout.findViewWithTag<View>("pocket_agent_admin_panel")?.let { contentLayout.removeView(it) }
                 if (::status.isInitialized && !prefs.getBoolean("voice_session_requested", false)) {
                     status.text = "TAP THE ORB TO TALK"
                 }
