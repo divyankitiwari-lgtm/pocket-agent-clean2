@@ -589,6 +589,68 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 7413) {
+            if (resultCode != RESULT_OK || data == null) {
+                status.text = "Google sign-in was cancelled or did not return an account."
+                AlertDialog.Builder(this)
+                    .setTitle("Google sign-in didn't finish")
+                    .setMessage("Google returned without signing you in. If you selected your account and came back here, check the Firebase Google provider and the SHA-1 certificate for this exact APK. Try again after checking the setup.")
+                    .setPositiveButton("OK", null)
+                    .show()
+                return
+            }
+            try {
+                val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
+                val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+                firebaseAuth?.signInWithCredential(credential)
+                    ?.addOnSuccessListener { result ->
+                        val user = result.user
+                        if (user == null) {
+                            status.text = "Google sign-in returned no Firebase user"
+                            return@addOnSuccessListener
+                        }
+                        authScreenVisible = false
+                        authFeedback = null
+                        homeRoot?.let { setContentView(it) }
+                        refreshAdminClaim(user)
+                        showAccountBanner(user)
+                        status.text = "Signed in with Google"
+                        val profile = hashMapOf<String, Any>(
+                            "displayName" to (user.displayName ?: account.displayName ?: "JARVIS user"),
+                            "email" to (user.email ?: account.email.orEmpty()),
+                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                        )
+                        firestore?.collection("users")?.document(user.uid)
+                            ?.set(profile, SetOptions.merge())
+                            ?.addOnFailureListener { error ->
+                                status.text = "Google sign-in succeeded; profile sync failed: " + (error.message ?: "check Firestore rules")
+                            }
+                    }
+                    ?.addOnFailureListener { error ->
+                        val message = "Firebase Google sign-in failed: " + (error.message ?: "check provider setup")
+                        status.text = message
+                        AlertDialog.Builder(this)
+                            .setTitle("Google sign-in failed")
+                            .setMessage(message + "\n\nCheck that Google is enabled in Firebase Authentication and that the SHA-1 certificate for this APK is registered in Firebase.")
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+            } catch (error: Exception) {
+                val message = "Google sign-in failed: " + (error.message ?: "check Firebase OAuth setup")
+                status.text = message
+                AlertDialog.Builder(this)
+                    .setTitle("Google sign-in failed")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+            return
+        }
+        }
+    }
+
     override fun onDestroy() {
         if (voiceReceiverRegistered) {
             try { unregisterReceiver(voiceReceiver) } catch (_: Exception) {}
