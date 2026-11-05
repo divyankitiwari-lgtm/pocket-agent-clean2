@@ -35,7 +35,7 @@ class MultiProviderAiClient(private val context:Context) {
   } catch(e:Exception){failures+="Local Gemma: ${safeMessage(e)}"}
   throw IllegalStateException(if(failures.isEmpty()) "No provider enabled. Configure an API slot or import a local model." else "All AI routes failed: "+failures.joinToString(" | "))
  }
- private fun safeMessage(e:Exception)=(e.message?:e.javaClass.simpleName).replace(Regex("(?i)(key|token|authorization)[=: ]+[^ ,;]+"),"\\$1=[redacted]").take(180)
+ private fun safeMessage(e:Exception)=(e.message?:e.javaClass.simpleName).replace(Regex("(?i)(key|token|authorization)[=: ]+[^ ,;]+"),"\$1=[redacted]").take(180)
  private fun request(spec:AiProviderSpec,slot:AiSlot,prompt:String):String {
   val base=slot.baseUrl.trim().ifBlank{spec.baseUrl}.trimEnd('/')
   val url:String
