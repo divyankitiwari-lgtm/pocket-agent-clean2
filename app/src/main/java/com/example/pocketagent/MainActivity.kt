@@ -340,7 +340,7 @@ If you are unsure or the question needs current information, say so plainly.
 User question: $question
 """.trimIndent()
             val response = try {
-                val result = MultiProviderAiClient(applicationContext).generate(prompt, true)
+                val result = MultiProviderAiClient(applicationContext).generate(prompt, prefs.getBoolean("local_model_fallback", true))
                 logCommunication("VOICE AI ROUTE", "${result.providerLabel} · ${result.model}")
                 result.text.trim().take(900).ifBlank { "The selected AI provider returned an empty answer." }
             } catch (error: Exception) {
@@ -1473,7 +1473,13 @@ Keep the answer short and useful. If the question asks for progress, explain the
             status.text = "App control needs the JARVIS Accessibility Service"
             return
         }
-        if (mode == 0 && com.example.pocketagent.ai.AiProviderStore(this).enabledSlots().isEmpty() && !File(filesDir, "pocket-agent-local-model.task").isFile) { status.text = "Configure an API slot or import a local model in Settings → AI providers & models"; return }
+        if (mode == 0) {
+            val hasConfiguredSlot = try { com.example.pocketagent.ai.AiProviderStore(this).enabledSlots().isNotEmpty() } catch (_: Exception) { false }
+            if (!hasConfiguredSlot && !File(filesDir, "pocket-agent-local-model.task").isFile) {
+                status.text = "Configure an API slot or import a local model in Settings → AI providers & models"
+                return
+            }
+        }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
@@ -1578,7 +1584,7 @@ Previous action result: ${lastResult.take(500)}
                         }
                         2 -> localRulePlan(userTask, screen, lastResult)
                         else -> {
-                            val result = MultiProviderAiClient(applicationContext).generate(instruction, true)
+                            val result = MultiProviderAiClient(applicationContext).generate(instruction, prefs.getBoolean("local_model_fallback", true))
                             logCommunication("AI ROUTE", "Slot ${result.slot} · ${result.providerLabel} · ${result.model}" + if (result.usedLocalModel) " · local fallback" else "")
                             result.text
                         }
