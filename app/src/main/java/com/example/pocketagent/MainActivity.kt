@@ -374,7 +374,7 @@ User's spoken question: $question
 Keep the answer short and useful. If the question asks for progress, explain the current state and any blocker. If you cannot know something from this context, say so honestly.
 """.trimIndent()
             val response = try {
-                val result = MultiProviderAiClient(applicationContext).generate(prompt, getSharedPreferences("jarvis_ai_settings", MODE_PRIVATE).getBoolean("local_model_fallback", true))
+                val result = MultiProviderAiClient(applicationContext).generate(prompt)
                 logCommunication("FOLLOW-UP AI ROUTE", "${result.providerLabel} · ${result.model}")
                 result.text.trim().take(650)
             } catch (_: Exception) {
