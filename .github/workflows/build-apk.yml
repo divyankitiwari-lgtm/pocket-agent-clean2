@@ -3,7 +3,7 @@ name: Build JARVIS Android APK
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "rebuild/**"]
+    branches: ["main", "rebuild/**", "jarvis/**"]
   # Nightly regression build at 03:00 India Standard Time (21:30 UTC); APKs are retained for 14 days.
   schedule:
     - cron: "30 21 * * *"
@@ -60,25 +60,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Bundle Gemma model into the APK
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${HF_TOKEN:-}" ]; then
-            echo "Missing repository secret HF_TOKEN. Add a Hugging Face read token after accepting the Gemma model terms." >&2
-            exit 1
-          fi
-          mkdir -p app/src/main/assets
-          MODEL=app/src/main/assets/gemma3-1b-it-int4.task
-          curl --location --fail --retry 4 --retry-all-errors --connect-timeout 30 \
-            --header "Authorization: Bearer $HF_TOKEN" \
-            --output "$MODEL" \
-            "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task?download=true"
-          SIZE=$(stat -c%s "$MODEL")
-          if [ "$SIZE" -lt 100000000 ]; then echo "Gemma model download incomplete: $SIZE bytes" >&2; exit 1; fi
-          echo "Bundled Gemma model size: $(du -h "$MODEL" | cut -f1)"
       - name: Run JARVIS unit tests
         run: gradle --no-daemon testDebugUnitTest
       - name: Build debug APK

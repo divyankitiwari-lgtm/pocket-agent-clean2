@@ -24,6 +24,7 @@ import org.json.JSONObject
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.firebase.FirebaseApp
+import com.example.pocketagent.ai.MultiProviderAiClient
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -41,6 +42,10 @@ import java.util.Locale
 import java.util.TimeZone
 
 class MainActivity : Activity() {
+    private companion object {
+        const val LOCAL_ADMIN_EMAIL = "divyankitiwari@gmail.com"
+    }
+
     private lateinit var status: TextView
     private lateinit var model: Spinner
     private lateinit var modeSpinner: Spinner
@@ -61,8 +66,6 @@ class MainActivity : Activity() {
     private var voiceReceiverRegistered = false
     private var firebaseAuth: FirebaseAuth? = null
     private var firestore: FirebaseFirestore? = null
-    // Keep the on-device model loaded between agent steps; loading a ~500 MB model every step is too slow.
-    private var gemmaEngine: GemmaEngine? = null
     private var homeRoot: View? = null
     private var authScreenVisible = false
     private var permissionScreenVisible = false
@@ -180,10 +183,10 @@ class MainActivity : Activity() {
         val hidden = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         modeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item,
-                listOf("Cloud AI", "Bundled Gemma · offline", "Local rules")).also {
+                listOf("Cloud AI", "Local rules")).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            setSelection(1)
+            setSelection(0)
         }
         model = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item,
@@ -329,7 +332,7 @@ class MainActivity : Activity() {
     }
 
     private fun answerVoiceQuestion(question: String) {
-        setOrbState(LiquidOrbView.State.THINKING, "GEMMA IS THINKING · ON DEVICE")
+        setOrbState(LiquidOrbView.State.THINKING, "JARVIS IS THINKING")
         Thread {
             val prompt = """
 You are JARVIS, a helpful voice assistant running locally on an Android device.
@@ -339,16 +342,16 @@ If you are unsure or the question needs current information, say so plainly.
 User question: $question
 """.trimIndent()
             val response = try {
-                generateLocalAi(prompt).trim().take(900).ifBlank {
-                    "My on-device Gemma model returned an empty answer. Please try asking again."
-                }
+                val result = MultiProviderAiClient(applicationContext).generate(prompt)
+                logCommunication("VOICE AI ROUTE", "${result.providerLabel} · ${result.model}")
+                result.text.trim().take(900).ifBlank { "The selected AI provider returned an empty answer." }
             } catch (error: Exception) {
-                logCommunication("GEMMA QUESTION ERROR", error.message ?: error.javaClass.simpleName)
-                "I could not run my on-device Gemma model for that question. The local model did not respond, so I do not want to guess."
+                logCommunication("VOICE AI ERROR", error.message ?: error.javaClass.simpleName)
+                "I could not get a response from the configured AI providers. Please check AI provider settings."
             }
             runOnUiThread {
                 answerView.text = response
-                saveHistory(question, "Gemma 3 1B · on-device", response)
+                saveHistory(question, "AI provider", response)
                 logCommunication("VOICE ANSWER", response)
                 setOrbState(LiquidOrbView.State.SPEAKING, "JARVIS IS ANSWERING")
                 speakThroughVoiceService(response)
@@ -371,10 +374,12 @@ User's spoken question: $question
 Keep the answer short and useful. If the question asks for progress, explain the current state and any blocker. If you cannot know something from this context, say so honestly.
 """.trimIndent()
             val response = try {
-                generateLocalAi(prompt).trim().take(650)
+                val result = MultiProviderAiClient(applicationContext).generate(prompt)
+                logCommunication("FOLLOW-UP AI ROUTE", "${result.providerLabel} · ${result.model}")
+                result.text.trim().take(650)
             } catch (_: Exception) {
                 val problem = latest.take(160)
-                "I'm still working on $taskNow. My current status is $statusNow. Latest action information: $problem. I can't answer that in more detail from the current device state."
+                "I'm still working on $taskNow. My current status is $statusNow. Latest action information: $problem. My configured AI routes are unavailable right now."
             }
             runOnUiThread { speakThroughVoiceService(response) }
         }.start()
@@ -418,14 +423,15 @@ Keep the answer short and useful. If the question asks for progress, explain the
     }
 
     private fun showJarvisSettings() {
-        val options = arrayOf("Permissions & voice", "Connections", "Saved history")
+        val options = arrayOf("Permissions & voice", "AI providers & models", "Connections", "Saved history")
         AlertDialog.Builder(this)
             .setTitle("SETTINGS")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showPermissionOnboarding()
-                    1 -> startActivity(Intent(this, ConnectionsActivity::class.java))
-                    2 -> showHistory()
+                    1 -> startActivity(Intent(this, AiModelsActivity::class.java))
+                    2 -> startActivity(Intent(this, ConnectionsActivity::class.java))
+                    3 -> showHistory()
                 }
             }
             .setNegativeButton("Close", null)
@@ -583,9 +589,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }
     }
 
-    private fun localModelFile(): File = File(filesDir, "pocket-agent-local-model.task")
-
-    @Deprecated("Use document picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 7413) {
@@ -645,58 +648,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
             }
             return
         }
-        if (requestCode != 7412 || resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        status.text = "Importing local model…"
-        Thread {
-            try {
-                contentResolver.openInputStream(uri).use { input ->
-                    if (input == null) throw IllegalStateException("Could not read selected model file.")
-                    localModelFile().outputStream().use { output -> input.copyTo(output) }
-                }
-                runOnUiThread {
-                    status.text = "Local model imported · " + (localModelFile().length() / (1024 * 1024)) + " MB"
-                    logCommunication("LOCAL MODEL", "Imported model file to app-private storage.")
-                }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "Model import failed: " + (e.message ?: "unknown error") }
-            }
-        }.start()
-    }
-
-    private fun ensureGemmaModelBundled(): File {
-        val target = localModelFile()
-        if (target.isFile && target.length() > 100_000_000L) return target
-        val temp = File(filesDir, "gemma3-1b-it-int4.task.copying")
-        try {
-            assets.open("gemma3-1b-it-int4.task").use { input ->
-                temp.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(1024 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        if (count > 0) output.write(buffer, 0, count)
-                    }
-                }
-            }
-            check(temp.length() > 100_000_000L) { "Bundled Gemma model is missing or incomplete in this APK." }
-            if (target.exists()) target.delete()
-            check(temp.renameTo(target)) { "Could not prepare bundled Gemma model in app storage." }
-            runOnUiThread { status.text = "Bundled Gemma model ready · running locally" }
-            return target
-        } catch (error: Exception) {
-            temp.delete()
-            throw error
         }
-    }
-    @Synchronized
-    private fun generateLocalAi(prompt: String): String {
-        val modelFile = ensureGemmaModelBundled()
-        val engine = gemmaEngine ?: GemmaEngine(applicationContext, modelFile).also {
-            gemmaEngine = it
-            logCommunication("LOCAL AI", "Gemma runtime loaded from app-private model storage.")
-        }
-        return engine.generate(prompt)
     }
 
     override fun onDestroy() {
@@ -705,8 +657,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
             voiceReceiverRegistered = false
         }
         // Keep the user-started voice foreground service alive while another app is in front.
-        try { gemmaEngine?.close() } catch (_: Exception) {}
-        gemmaEngine = null
         super.onDestroy()
     }
 
@@ -800,7 +750,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
         if (!isAdminAccount() || contentLayout.findViewWithTag<View>("pocket_agent_admin_panel") != null) return
         val panel = card(Color.WHITE).apply { tag = "pocket_agent_admin_panel" }
         panel.addView(TextView(this).apply {
-            text = "✦ ADMIN · VERIFIED ACCOUNT"
+            text = "✦ LOCAL ADMIN · OWNER EMAIL MATCH"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -810,7 +760,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
                 intArrayOf(Color.rgb(74, 47, 180), Color.rgb(45, 122, 220))).apply { cornerRadius = dp(16).toFloat() }
         }, margins(bottom = 8))
         panel.addView(TextView(this).apply {
-            text = "Signed in as ${firebaseAuth?.currentUser?.email ?: "Admin"}\\nRole: ADMIN · verified by Firebase"
+            text = "Signed in as ${firebaseAuth?.currentUser?.email ?: "Admin"}\\nRole: LOCAL ADMIN"
             textSize = 13f
             setTextColor(ink)
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -826,9 +776,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         panel.addView(actionButton("Report a bug", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
             setOnClickListener { showBugReportForm() }
         }, margins(bottom = 8))
-        panel.addView(actionButton("Review bug reports", Color.rgb(235, 250, 240), Color.rgb(20, 110, 65)).apply {
-            setOnClickListener { showAdminBugInbox() }
-        })
         contentLayout.addView(panel, 0, LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(dp(16), dp(8), dp(16), dp(12))
         })
@@ -920,28 +867,32 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }.addOnFailureListener { error -> status.text = "Could not load reports: " + (error.message ?: "check admin claims and rules") }
     }
 
-    private fun isAdminAccount(): Boolean =
-        prefs.getBoolean("admin_verified_by_firebase", false) && firebaseAuth?.currentUser != null
+    // Local UI-only owner allowlist. This is NOT a secure server authorization boundary.
+    // Never use a shared/default password as an admin credential.
+    private fun isAdminAccount(): Boolean {
+        val signedInEmail = firebaseAuth?.currentUser?.email?.trim()
+        return signedInEmail.equals(LOCAL_ADMIN_EMAIL, ignoreCase = true)
+    }
 
     private fun refreshAdminClaim(user: FirebaseUser?) {
-        // Clear any cached role before checking the currently signed-in user's token.
-        prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
-        if (user == null) return
-        user.getIdToken(true).addOnSuccessListener { token ->
-            val admin = token.claims["admin"] == true
-            val claimedPlan = token.claims["plan"] as? String
-            val verifiedPlan = if (admin) "Admin" else if (claimedPlan == "Pro" || claimedPlan == "Max") claimedPlan else "Free"
-            prefs.edit().putBoolean("admin_verified_by_firebase", admin)
-                .putString("verified_plan", verifiedPlan).apply()
-            runOnUiThread {
-                updatePlanPill()
-                if (::status.isInitialized && !prefs.getBoolean("voice_session_requested", false)) {
-                    status.text = "TAP THE ORB TO TALK"
+        val isLocalOwner = user?.email?.trim().equals(LOCAL_ADMIN_EMAIL, ignoreCase = true)
+        prefs.edit()
+            .putBoolean("local_admin_email_match", isLocalOwner)
+            .putString("verified_plan", if (isLocalOwner) "Admin" else "Free")
+            .apply()
+
+        runOnUiThread {
+            updatePlanPill()
+            if (isLocalOwner) {
+                showAdminBanner()
+            } else {
+                contentLayout.findViewWithTag<View>("pocket_agent_admin_panel")?.let {
+                    contentLayout.removeView(it)
                 }
             }
-        }.addOnFailureListener {
-            prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
-            runOnUiThread { status.text = "ACCOUNT · ${user.email ?: "Signed-in user"} · ROLE NOT VERIFIED" }
+            if (::status.isInitialized && !prefs.getBoolean("voice_session_requested", false)) {
+                status.text = if (user == null) "NOT SIGNED IN" else "TAP THE ORB TO TALK"
+            }
         }
     }
 
@@ -1469,7 +1420,13 @@ Keep the answer short and useful. If the question asks for progress, explain the
             status.text = "App control needs the JARVIS Accessibility Service"
             return
         }
-        if (mode == 0 && key.isBlank()) { status.text = "Cloud engine not configured · open Advanced AI engine settings or choose an offline mode"; return }
+        if (mode == 0) {
+            val hasConfiguredSlot = try { com.example.pocketagent.ai.AiProviderStore(this).enabledSlots().isNotEmpty() } catch (_: Exception) { false }
+            if (!hasConfiguredSlot) {
+                status.text = "Configure an API provider and key in Settings → AI providers & models"
+                return
+            }
+        }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
@@ -1558,32 +1515,19 @@ Visible screen text:
 ${if (mode == 0 && !shareScreenText) "[OMITTED: screen-text sharing is disabled. Do not guess visible controls; ask the user to enable screen sharing or choose a local mode.]" else screen.take(9000)}
 Previous action result: ${lastResult.take(500)}
 """.trimIndent()
-                    val raw = when (mode) {
-                        1 -> {
-                            // Use the actual MediaPipe runtime for local inference; fall back to explicit
-                            // local rules only when the selected model cannot load or produce a response.
-                            try {
-                                logCommunication("LOCAL AI", "Running the imported .task model on-device.")
-                                generateLocalAi(instruction)
-                            } catch (localError: Exception) {
-                                logCommunication("LOCAL AI FALLBACK", "On-device inference failed: " +
-                                    (localError.message ?: localError.javaClass.simpleName) +
-                                    ". Falling back to local rules; no cloud request was made.")
-                                localRulePlan(userTask, screen, lastResult)
-                            }
-                        }
-                        2 -> localRulePlan(userTask, screen, lastResult)
-                        else -> requestGeminiText(key, chosenModel, instruction)
+                    val raw = if (mode == 1) {
+                        localRulePlan(userTask, screen, lastResult)
+                    } else {
+                        val result = MultiProviderAiClient(applicationContext).generate(instruction)
+                        logCommunication("AI ROUTE", "Slot ${result.slot} · ${result.providerLabel} · ${result.model}")
+                        result.text
                     }
                     val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value
                     val command = try {
                         if (match != null) JSONObject(match)
                         else throw IllegalStateException("Planner did not return action JSON.")
                     } catch (parseError: Exception) {
-                        if (mode == 1) {
-                            logCommunication("LOCAL AI FALLBACK", "Local model response was not valid action JSON. Trying safe local rules for this step.")
-                            JSONObject(localRulePlan(userTask, screen, lastResult))
-                        } else throw IllegalStateException("Planner did not return valid action JSON.")
+                        throw IllegalStateException("Planner did not return valid action JSON.")
                     }
                     val action = command.optString("action", "ask_user")
                     val textValue = command.optString("text", "")
@@ -1751,26 +1695,17 @@ Previous action result: ${lastResult.take(500)}
 
         askButton.isEnabled = false
         askButton.text = "Working…"
-        status.text = when (mode) { 1 -> "Running local AI on this phone…"; 2 -> "Planning with local rules…"; else -> "Sending request to cloud AI…" }
+        status.text = if (mode == 1) "Planning with local rules…" else "Sending request to cloud AI…"
         logCommunication("REQUEST", "Mode: " + modeSpinner.selectedItem.toString() + "\nModel: " + chosenModel + "\nTask: " + userTask.take(500))
-        answerView.text = if (mode == 2) "Using local rules. No API or model required." else if (mode == 1) "Running inference locally; no task text is sent to cloud AI." else "Waiting for cloud AI response. Keep this screen open."
+        answerView.text = if (mode == 1) "Using local rules. No model or API required." else "Waiting for cloud AI response. Keep this screen open."
         Thread {
             var connection: HttpURLConnection? = null
             try {
-                if (mode != 0) {
-                    val localResponse = if (mode == 1) {
-                        try {
-                            generateLocalAi(prompt)
-                        } catch (localError: Exception) {
-                            logCommunication("LOCAL AI FALLBACK", "Model inference failed: " +
-                                (localError.message ?: localError.javaClass.simpleName))
-                            "On-device model could not run: " + (localError.message ?: "unknown model/runtime error") +
-                                "\\n\\nTry a compatible MediaPipe .task model, or switch to Local Rules mode. No cloud request was sent."
-                        }
-                    } else localRulePlan(userTask, screen, "")
+                if (mode == 1) {
+                    val localResponse = localRulePlan(userTask, screen, "")
                     runOnUiThread {
                         answerView.text = localResponse
-                        status.text = if (mode == 1) "On-device model attempt finished · no API used" else "Local rules response · no API used"
+                        status.text = "Local rules response · no AI model used"
                         saveHistory(userTask, modeSpinner.selectedItem.toString(), localResponse)
                     }
                     return@Thread

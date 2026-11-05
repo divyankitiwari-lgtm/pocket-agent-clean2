@@ -10,3 +10,7 @@ app/build/
 
 # Firebase Android client config is supplied privately to CI or locally.
 app/google-services.json
+
+# Never commit privileged Firebase Admin SDK credentials.
+serviceAccountKey.json
+*.service-account.json

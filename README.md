@@ -64,3 +64,11 @@ The workflow uses JDK 17 and Gradle 8.9. The app's minimum Android version is AP
 - Package: com.example.pocketagent (package ID retained for upgrade compatibility)
 - Build: GitHub Actions, Gradle 8.9, JDK 17
 - Active rebuild branch: rebuild/jarvis-unified-agent
+
+## AI provider slots and optional local fallback
+
+The `jarvis/a-z-agent-foundation` development branch adds a four-slot AI provider manager. Configure it from **Settings → AI providers & models**. Enabled slots are tried in order; failures fall through to the next configured slot. Optional imported Gemma inference can be used after the API routes when the local fallback switch is enabled.
+
+Supported provider families include Gemini, OpenAI, Anthropic Claude, OpenRouter, NVIDIA NIM, Groq, Cerebras, Together AI, Mistral, DeepSeek and Ollama. Each slot has its own provider, model ID, key and optional custom base URL. API keys are stored with Android EncryptedSharedPreferences; the app refuses to silently store keys in plaintext if secure storage cannot initialize.
+
+See [AI provider setup](docs/AI_PROVIDER_SETUP.md) for protocol support, model ID notes, local model requirements and privacy details. This is a development branch and must pass its GitHub Actions build before it is considered build-verified.
