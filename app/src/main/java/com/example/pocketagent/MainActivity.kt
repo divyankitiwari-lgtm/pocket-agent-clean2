@@ -216,8 +216,11 @@ class MainActivity : Activity() {
                     VoiceSessionService.ACTION_TASK -> {
                         if (spoken.isNotBlank() && !agentRunning) {
                             task.setText(spoken)
-                            setOrbState(LiquidOrbView.State.THINKING, "UNDERSTANDING YOUR REQUEST")
-                            startAutonomousAgent(agentButton)
+                            if (shouldAnswerAsConversation(spoken)) answerVoiceQuestion(spoken)
+                            else {
+                                setOrbState(LiquidOrbView.State.THINKING, "UNDERSTANDING YOUR REQUEST")
+                                startAutonomousAgent(agentButton)
+                            }
                         }
                     }
                     VoiceSessionService.ACTION_FOLLOWUP -> answerVoiceFollowup(spoken)
@@ -315,6 +318,43 @@ class MainActivity : Activity() {
         try { startService(intent) } catch (_: Exception) {}
     }
 
+    private fun shouldAnswerAsConversation(raw: String): Boolean {
+        val value = raw.trim().lowercase().replace(Regex("\\s+"), " ")
+        val startsLikeQuestion = Regex("^(what|who|when|where|why|how|is|are|am|can|could|do|does|did|will|would|should|explain|define|tell me|what.s|whats)\\b").containsMatchIn(value)
+        val isGreeting = value.startsWith("hello") || value.startsWith("hi ") || value == "hi" ||
+            value.startsWith("hey") || value.startsWith("good morning") || value.startsWith("good evening") ||
+            value.startsWith("thank you") || value.startsWith("thanks")
+        val asksForPhoneAction = Regex("\\b(open|launch|tap|click|scroll|type|enter|switch to|go to|start|stop|pause|resume|install|uninstall|send|delete|share|play)\\b").containsMatchIn(value)
+        return (startsLikeQuestion || isGreeting) && !asksForPhoneAction
+    }
+
+    private fun answerVoiceQuestion(question: String) {
+        setOrbState(LiquidOrbView.State.THINKING, "GEMMA IS THINKING · ON DEVICE")
+        Thread {
+            val prompt = """
+You are JARVIS, a helpful voice assistant running locally on an Android device.
+Answer the user directly in clear, natural spoken English. Keep the answer concise and useful.
+Do not return JSON, markdown tables, or automation actions. Do not claim to control the phone.
+If you are unsure or the question needs current information, say so plainly.
+User question: $question
+""".trimIndent()
+            val response = try {
+                generateLocalAi(prompt).trim().take(900).ifBlank {
+                    "My on-device Gemma model returned an empty answer. Please try asking again."
+                }
+            } catch (error: Exception) {
+                logCommunication("GEMMA QUESTION ERROR", error.message ?: error.javaClass.simpleName)
+                "I could not run my on-device Gemma model for that question. The local model did not respond, so I do not want to guess."
+            }
+            runOnUiThread {
+                answerView.text = response
+                saveHistory(question, "Gemma 3 1B · on-device", response)
+                logCommunication("VOICE ANSWER", response)
+                setOrbState(LiquidOrbView.State.SPEAKING, "JARVIS IS ANSWERING")
+                speakThroughVoiceService(response)
+            }
+        }.start()
+    }
     private fun answerVoiceFollowup(question: String) {
         if (question.isBlank()) return
         Thread {
