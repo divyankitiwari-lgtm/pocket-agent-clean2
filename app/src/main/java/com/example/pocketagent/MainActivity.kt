@@ -30,6 +30,7 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -421,7 +422,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
     }
 
     private fun showJarvisSettings() {
-        val options = arrayOf("Permissions & voice", "AI providers & models", "Connections", "Saved history")
+        val options = arrayOf("Permissions & voice", "AI providers & models", "Connections", "Saved history", "Activate initial admin (owner only)")
         AlertDialog.Builder(this)
             .setTitle("SETTINGS")
             .setItems(options) { _, which ->
@@ -430,6 +431,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
                     1 -> startActivity(Intent(this, AiModelsActivity::class.java))
                     2 -> startActivity(Intent(this, ConnectionsActivity::class.java))
                     3 -> showHistory()
+                    4 -> activateInitialAdmin()
                 }
             }
             .setNegativeButton("Close", null)
@@ -832,6 +834,9 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }, margins(bottom = 8))
         panel.addView(actionButton("Review bug reports", Color.rgb(235, 250, 240), Color.rgb(20, 110, 65)).apply {
             setOnClickListener { showAdminBugInbox() }
+        }, margins(bottom = 8))
+        panel.addView(actionButton("Manage admin accounts", Color.rgb(242, 238, 255), accent).apply {
+            setOnClickListener { showManageAdminsDialog() }
         })
         contentLayout.addView(panel, 0, LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(dp(16), dp(8), dp(16), dp(12))
@@ -947,6 +952,67 @@ Keep the answer short and useful. If the question asks for progress, explain the
             prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
             runOnUiThread { status.text = "ACCOUNT · ${user.email ?: "Signed-in user"} · ROLE NOT VERIFIED" }
         }
+    }
+
+    private fun activateInitialAdmin() {
+        val user = firebaseAuth?.currentUser
+        if (user == null) {
+            status.text = "Sign in first to activate the owner account"
+            return
+        }
+        status.text = "Verifying owner account with Firebase…"
+        FirebaseFunctions.getInstance().getHttpsCallable("bootstrapFirstAdmin").call()
+            .addOnSuccessListener {
+                user.getIdToken(true).addOnSuccessListener {
+                    refreshAdminClaim(user)
+                    status.text = "Admin role activated · token refreshed"
+                    showAdminBanner()
+                }.addOnFailureListener { error ->
+                    status.text = "Admin granted, but token refresh failed: ${error.message}"
+                }
+            }
+            .addOnFailureListener { error ->
+                status.text = "Admin setup denied/failed: ${error.message ?: "check Firebase setup"}"
+            }
+    }
+
+    private fun showManageAdminsDialog() {
+        val emailField = field("Existing verified Firebase account email", false)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Manage admin access")
+            .setMessage("Grant or revoke admin access. Only the verified owner account can perform this action.")
+            .setView(emailField)
+            .setPositiveButton("Grant admin", null)
+            .setNeutralButton("Revoke admin", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                updateAdminRole(emailField.text.toString().trim(), true)
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                updateAdminRole(emailField.text.toString().trim(), false)
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun updateAdminRole(email: String, makeAdmin: Boolean) {
+        if (email.isBlank()) {
+            status.text = "Enter the Firebase account email"
+            return
+        }
+        FirebaseFunctions.getInstance().getHttpsCallable("setAdminRole")
+            .call(hashMapOf("email" to email, "admin" to makeAdmin))
+            .addOnSuccessListener {
+                status.text = if (makeAdmin) "Admin access granted · ask that user to sign in again"
+                    else "Admin access revoked · ask that user to sign in again"
+            }
+            .addOnFailureListener { error ->
+                status.text = "Could not update admin: ${error.message ?: "check owner permissions"}"
+            }
     }
 
     private fun showAccountBanner(user: FirebaseUser) {
