@@ -1,10 +1,8 @@
 package com.example.pocketagent.ai
 
 import android.content.Context
-import com.example.pocketagent.GemmaEngine
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -13,7 +11,7 @@ data class AiGenerationResult(val text:String,val providerLabel:String,val model
 
 class MultiProviderAiClient(private val context:Context) {
  private val store=AiProviderStore(context.applicationContext)
- fun generate(prompt:String,includeLocalFallback:Boolean=true):AiGenerationResult {
+ fun generate(prompt:String):AiGenerationResult {
   require(prompt.isNotBlank())
   val failures=mutableListOf<String>()
   for((index,slot) in store.enabledSlots()) {
@@ -25,16 +23,7 @@ class MultiProviderAiClient(private val context:Context) {
     failures+="Slot $index (${spec.label}): empty response"
    } catch(e:Exception) { failures+="Slot $index (${spec.label}): ${safeMessage(e)}" }
   }
-  if(includeLocalFallback) try {
-   // Only use a model explicitly imported by the user. No model is bundled in the APK.
-   val file=File(context.filesDir,"pocket-agent-local-model.task")
-   if(file.isFile && file.length()>100_000_000L) {
-    val engine=GemmaEngine(context.applicationContext,file)
-    try { val answer=engine.generate(prompt).trim(); if(answer.isNotBlank()) return AiGenerationResult(answer,"On-device Gemma","Imported MediaPipe .task model",0,true) }
-    finally { engine.close() }
-   }
-  } catch(e:Exception){failures+="Local Gemma: ${safeMessage(e)}"}
-  throw IllegalStateException(if(failures.isEmpty()) "No provider enabled. Configure an API slot or import a local model." else "All AI routes failed: "+failures.joinToString(" | "))
+  throw IllegalStateException(if(failures.isEmpty()) "No provider enabled. Configure an API provider and key." else "All AI routes failed: "+failures.joinToString(" | "))
  }
  private fun safeMessage(e:Exception)=(e.message?:e.javaClass.simpleName).replace(Regex("(?i)(key|token|authorization)[=: ]+[^ ,;]+"),"\$1=[redacted]").take(180)
  private fun request(spec:AiProviderSpec,slot:AiSlot,prompt:String):String {
