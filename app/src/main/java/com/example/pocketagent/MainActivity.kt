@@ -234,6 +234,7 @@ class MainActivity : Activity() {
         val voiceFilter = android.content.IntentFilter().apply {
             addAction(VoiceSessionService.ACTION_TASK)
             addAction(VoiceSessionService.ACTION_FOLLOWUP)
+            addAction(VoiceSessionService.ACTION_STATE)
         }
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             registerReceiver(voiceReceiver, voiceFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
