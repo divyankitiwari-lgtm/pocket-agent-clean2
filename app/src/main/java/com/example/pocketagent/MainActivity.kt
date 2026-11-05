@@ -1555,21 +1555,45 @@ Previous action result: ${lastResult.take(500)}
                         }
                         "open_app", "tap_text", "type_text", "scroll_down", "scroll_up", "back", "home" -> {
                             // Reset the previous result so a timeout cannot be mistaken for a successful action.
+                            val screenBefore = prefs.getString("latest_screen_text", "").orEmpty()
                             prefs.edit().putString("last_action_result", "")
                                 .putString("pending_action", JSONObject().put("action", action).put("text", textValue).toString()).apply()
                             var waited = 0
                             var actionResult = ""
-                            while (agentRunning && prefs.getBoolean("session_active", false) && waited < 6000) {
+                            var screenChanged = false
+                            while (agentRunning && prefs.getBoolean("session_active", false) && waited < 7000) {
                                 actionResult = prefs.getString("last_action_result", "").orEmpty()
-                                if (actionResult.isNotBlank() && !actionResult.startsWith("Tap gesture queued:", true)) break
+                                val visibleNow = prefs.getString("latest_screen_text", "").orEmpty()
+                                screenChanged = visibleNow.isNotBlank() && visibleNow != screenBefore
+                                val dispatched = actionResult.startsWith("Tap gesture queued:", true) ||
+                                    actionResult.startsWith("Tap gesture completed:", true) ||
+                                    actionResult.startsWith("Accessibility click accepted:", true) ||
+                                    actionResult.startsWith("Opened app:", true) || actionResult.startsWith("Scrolled", true) ||
+                                    actionResult.startsWith("Pressed", true) || actionResult.startsWith("Entered text", true)
+                                val failed = actionResult.startsWith("Tap failed:", true) || actionResult.startsWith("Could not find", true) ||
+                                    actionResult.startsWith("Open app failed:", true) || actionResult.startsWith("Typing failed:", true) ||
+                                    actionResult.startsWith("Action error:", true)
+                                if (failed || (dispatched && screenChanged) || (dispatched && waited >= 5000)) break
                                 Thread.sleep(200)
                                 waited += 200
                             }
-                            lastResult = if (actionResult.startsWith("Tap gesture queued:", true)) {
-                                "Tap gesture confirmation timed out. The screen will be rechecked before another attempt."
-                            } else actionResult.ifBlank {
-                                "No confirmation received. Inspect the current screen and choose a different safe action if needed."
-                            }
+                            lastResult = if (screenChanged) {
+                                when (action) {
+                                    "open_app" -> "Opened app: " + textValue + " · screen change verified"
+                                    "tap_text" -> "Tapped visible control: " + textValue + " · screen change verified"
+                                    "scroll_down" -> "Scrolled down · screen change verified"
+                                    "scroll_up" -> "Scrolled up · screen change verified"
+                                    "type_text" -> "Entered text · screen change verified"
+                                    "back" -> "Pressed Back · screen change verified"
+                                    "home" -> "Pressed Home · screen change verified"
+                                    else -> actionResult
+                                }
+                            } else if (actionResult.startsWith("Tap gesture", true) || actionResult.startsWith("Accessibility click accepted:", true) ||
+                                actionResult.startsWith("Opened app:", true) || actionResult.startsWith("Scrolled", true) ||
+                                actionResult.startsWith("Pressed", true) || actionResult.startsWith("Entered text", true)) {
+                                "Action sent but not verified: " + action + " " + textValue + ". The visible screen did not change."
+                            } else actionResult.ifBlank { "No confirmation received from Accessibility Service." }
+                            prefs.edit().putString("last_action_result", lastResult).apply()
                             recordSuccessfulStep(lastResult)
                             runOnUiThread { answerView.append("\\n   ↳ " + lastResult) }
                             Thread.sleep(700)
