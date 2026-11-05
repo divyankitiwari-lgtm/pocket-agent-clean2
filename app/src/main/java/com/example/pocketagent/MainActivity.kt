@@ -527,9 +527,10 @@ Keep the answer short and useful. If the question asks for progress, explain the
         if (requestCode == 8821) {
             if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 if (prefs.getBoolean("voice_session_requested", false)) startVoiceSessionNow()
-                permissionDialog?.let { if (prefs.getBoolean("accessibility_connected", false)) it.dismiss() }
+                else showPermissionOnboardingIfNeeded()
             } else {
-                setOrbState(LiquidOrbView.State.ERROR, "MICROPHONE PERMISSION DENIED")
+                if (permissionScreenVisible) showPermissionOnboarding()
+                else setOrbState(LiquidOrbView.State.ERROR, "MICROPHONE PERMISSION DENIED")
             }
         }
     }
