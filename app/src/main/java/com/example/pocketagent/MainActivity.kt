@@ -59,10 +59,8 @@ class MainActivity : Activity() {
     private lateinit var agentButton: Button
     private var voiceReceiver: android.content.BroadcastReceiver? = null
     private var voiceReceiverRegistered = false
-    private var permissionDialog: AlertDialog? = null
     private var firebaseAuth: FirebaseAuth? = null
     private var firestore: FirebaseFirestore? = null
-    private var welcomeDialog: AlertDialog? = null
     // Keep the on-device model loaded between agent steps; loading a ~500 MB model every step is too slow.
     private var gemmaEngine: GemmaEngine? = null
     private var homeRoot: View? = null
@@ -412,30 +410,25 @@ Keep the answer short and useful. If the question asks for progress, explain the
 
     override fun onResume() {
         super.onResume()
-        if (!::prefs.isInitialized || authScreenVisible || firebaseAuth?.currentUser == null) return
-        val (mic, accessibility, speech) = syncPermissionState()
-        if (!mic || !accessibility || !speech) showPermissionOnboarding()
-        else if (permissionScreenVisible) {
-            permissionScreenVisible = false
-            homeRoot?.let { setContentView(it) }
-            updatePlanPill()
+        if (::prefs.isInitialized && !authScreenVisible && firebaseAuth?.currentUser != null) {
+            val (mic, accessibility, speech) = syncPermissionState()
+            if (!mic || !accessibility || !speech) showPermissionOnboarding()
+            else if (permissionScreenVisible) {
+                permissionScreenVisible = false
+                homeRoot?.let { setContentView(it) }
+            }
         }
-    }
-
-    private fun showPermissionOnboardingIfNeeded() {
-        if (firebaseAuth?.currentUser == null) return
-        val (mic, accessibility, speech) = syncPermissionState()
-        if (!mic || !accessibility || !speech) showPermissionOnboarding()
-        else {
-            permissionScreenVisible = false
-            homeRoot?.let { setContentView(it) }
+        if (::planPill.isInitialized) updatePlanPill()
+        if (::screenPreview.isInitialized) refreshScreenText()
+        if (::status.isInitialized && !permissionScreenVisible) {
+            status.text = when {
+                agentRunning && prefs.getBoolean("agent_paused", false) -> "TASK PAUSED · SAY CONTINUE"
+                agentRunning -> "JARVIS IS WORKING · ASK FOR PROGRESS BY VOICE"
+                firebaseAuth?.currentUser != null -> "TAP THE ORB TO TALK"
+                else -> "TAP THE ORB TO TALK"
+            }
         }
-        updatePlanPill()
-    }
-
-    private fun permissionRow(title: String, description: String, enabled: Boolean): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+    } orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
             background = glassSurface(20)
         }
@@ -1311,27 +1304,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         (Color.blue(color) + 255) / 2
     )
 
-    override fun onResume() {
-        super.onResume()
-        if (::planPill.isInitialized) updatePlanPill()
-        if (::screenPreview.isInitialized) refreshScreenText()
-        if (firebaseAuth?.currentUser != null && permissionDialog?.isShowing == true) {
-            val micGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val accessReady = prefs.getBoolean("accessibility_connected", false)
-            if (micGranted && accessReady) {
-                permissionDialog?.dismiss()
-                permissionDialog = null
-            }
-        }
-        if (::status.isInitialized) {
-            status.text = when {
-                agentRunning && prefs.getBoolean("agent_paused", false) -> "TASK PAUSED · SAY CONTINUE"
-                agentRunning -> "JARVIS IS WORKING · ASK FOR PROGRESS BY VOICE"
-                firebaseAuth?.currentUser != null -> "TAP THE ORB TO TALK"
-                else -> "TAP THE ORB TO TALK"
-            }
-        }
-    }
 
     private fun refreshScreenText() {
         val text = prefs.getString("latest_screen_text", "").orEmpty()
