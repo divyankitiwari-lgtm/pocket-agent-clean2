@@ -24,6 +24,7 @@ import org.json.JSONObject
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.firebase.FirebaseApp
+import com.example.pocketagent.ai.MultiProviderAiClient
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -183,7 +184,7 @@ class MainActivity : Activity() {
                 listOf("Cloud AI", "Bundled Gemma · offline", "Local rules")).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            setSelection(1)
+            setSelection(0)
         }
         model = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item,
@@ -339,12 +340,12 @@ If you are unsure or the question needs current information, say so plainly.
 User question: $question
 """.trimIndent()
             val response = try {
-                generateLocalAi(prompt).trim().take(900).ifBlank {
-                    "My on-device Gemma model returned an empty answer. Please try asking again."
-                }
+                val result = MultiProviderAiClient(applicationContext).generate(prompt, true)
+                logCommunication("VOICE AI ROUTE", "${result.providerLabel} · ${result.model}")
+                result.text.trim().take(900).ifBlank { "The selected AI provider returned an empty answer." }
             } catch (error: Exception) {
-                logCommunication("GEMMA QUESTION ERROR", error.message ?: error.javaClass.simpleName)
-                "I could not run my on-device Gemma model for that question. The local model did not respond, so I do not want to guess."
+                logCommunication("VOICE AI ERROR", error.message ?: error.javaClass.simpleName)
+                "I could not get a response from the configured AI providers or local model. Please check AI provider settings."
             }
             runOnUiThread {
                 answerView.text = response
@@ -371,10 +372,12 @@ User's spoken question: $question
 Keep the answer short and useful. If the question asks for progress, explain the current state and any blocker. If you cannot know something from this context, say so honestly.
 """.trimIndent()
             val response = try {
-                generateLocalAi(prompt).trim().take(650)
+                val result = MultiProviderAiClient(applicationContext).generate(prompt, true)
+                logCommunication("FOLLOW-UP AI ROUTE", "${result.providerLabel} · ${result.model}")
+                result.text.trim().take(650)
             } catch (_: Exception) {
                 val problem = latest.take(160)
-                "I'm still working on $taskNow. My current status is $statusNow. Latest action information: $problem. I can't answer that in more detail from the current device state."
+                "I'm still working on $taskNow. My current status is $statusNow. Latest action information: $problem. My configured AI routes are unavailable right now."
             }
             runOnUiThread { speakThroughVoiceService(response) }
         }.start()
@@ -1470,7 +1473,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
             status.text = "App control needs the JARVIS Accessibility Service"
             return
         }
-        if (mode == 0 && key.isBlank()) { status.text = "Cloud engine not configured · open Advanced AI engine settings or choose an offline mode"; return }
+        if (mode == 0 && com.example.pocketagent.ai.AiProviderStore(this).enabledSlots().isEmpty() && !File(filesDir, "pocket-agent-local-model.task").isFile) { status.text = "Configure an API slot or import a local model in Settings → AI providers & models"; return }
         if (agentRunning) {
             agentRunning = false
             prefs.edit().putBoolean("session_active", false).putString("pending_action", "").apply()
@@ -1574,7 +1577,11 @@ Previous action result: ${lastResult.take(500)}
                             }
                         }
                         2 -> localRulePlan(userTask, screen, lastResult)
-                        else -> requestGeminiText(key, chosenModel, instruction)
+                        else -> {
+                            val result = MultiProviderAiClient(applicationContext).generate(instruction, true)
+                            logCommunication("AI ROUTE", "Slot ${result.slot} · ${result.providerLabel} · ${result.model}" + if (result.usedLocalModel) " · local fallback" else "")
+                            result.text
+                        }
                     }
                     val match = Regex("\\{[\\s\\S]*?\\}").find(raw)?.value
                     val command = try {
