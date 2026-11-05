@@ -418,14 +418,15 @@ Keep the answer short and useful. If the question asks for progress, explain the
     }
 
     private fun showJarvisSettings() {
-        val options = arrayOf("Permissions & voice", "Connections", "Saved history")
+        val options = arrayOf("Permissions & voice", "AI providers & models", "Connections", "Saved history")
         AlertDialog.Builder(this)
             .setTitle("SETTINGS")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showPermissionOnboarding()
-                    1 -> startActivity(Intent(this, ConnectionsActivity::class.java))
-                    2 -> showHistory()
+                    1 -> startActivity(Intent(this, AiModelsActivity::class.java))
+                    2 -> startActivity(Intent(this, ConnectionsActivity::class.java))
+                    3 -> showHistory()
                 }
             }
             .setNegativeButton("Close", null)
