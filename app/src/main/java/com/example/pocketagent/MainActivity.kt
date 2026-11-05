@@ -1178,7 +1178,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
                             .addOnFailureListener { error -> runOnUiThread { status.text = "Profile sync failed: " + (error.message ?: "Firestore error") } }
                         authScreenVisible = false
                         authFeedback = null
-                        setContentView(homeRoot)
+                        homeRoot?.let { setContentView(it) }
                         refreshAdminClaim(user)
                         showAccountBanner(user)
                         status.text = "Account created · verification email sent to " + emailValue
@@ -1197,7 +1197,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
                         }
                         authScreenVisible = false
                         authFeedback = null
-                        setContentView(homeRoot)
+                        homeRoot?.let { setContentView(it) }
                         refreshAdminClaim(user)
                         showAccountBanner(user)
                         status.text = "Signed in successfully"
