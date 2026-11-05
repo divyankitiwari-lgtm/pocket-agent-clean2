@@ -42,6 +42,10 @@ import java.util.Locale
 import java.util.TimeZone
 
 class MainActivity : Activity() {
+    private companion object {
+        const val LOCAL_ADMIN_EMAIL = "divyankitiwari@gmail.com"
+    }
+
     private lateinit var status: TextView
     private lateinit var model: Spinner
     private lateinit var modeSpinner: Spinner
@@ -421,7 +425,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
     }
 
     private fun showJarvisSettings() {
-        val options = arrayOf("Permissions & voice", "AI providers & models", "Connections", "Saved history", "Activate initial admin (owner only)")
+        val options = arrayOf("Permissions & voice", "AI providers & models", "Connections", "Saved history")
         AlertDialog.Builder(this)
             .setTitle("SETTINGS")
             .setItems(options) { _, which ->
@@ -430,7 +434,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
                     1 -> startActivity(Intent(this, AiModelsActivity::class.java))
                     2 -> startActivity(Intent(this, ConnectionsActivity::class.java))
                     3 -> showHistory()
-                    4 -> activateInitialAdmin()
                 }
             }
             .setNegativeButton("Close", null)
@@ -805,7 +808,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
         if (!isAdminAccount() || contentLayout.findViewWithTag<View>("pocket_agent_admin_panel") != null) return
         val panel = card(Color.WHITE).apply { tag = "pocket_agent_admin_panel" }
         panel.addView(TextView(this).apply {
-            text = "✦ ADMIN · VERIFIED ACCOUNT"
+            text = "✦ LOCAL ADMIN · OWNER EMAIL MATCH"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -815,7 +818,7 @@ Keep the answer short and useful. If the question asks for progress, explain the
                 intArrayOf(Color.rgb(74, 47, 180), Color.rgb(45, 122, 220))).apply { cornerRadius = dp(16).toFloat() }
         }, margins(bottom = 8))
         panel.addView(TextView(this).apply {
-            text = "Signed in as ${firebaseAuth?.currentUser?.email ?: "Admin"}\\nRole: ADMIN · verified by Firebase"
+            text = "Signed in as ${firebaseAuth?.currentUser?.email ?: "Admin"}\\nRole: LOCAL ADMIN"
             textSize = 13f
             setTextColor(ink)
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -834,9 +837,6 @@ Keep the answer short and useful. If the question asks for progress, explain the
         panel.addView(actionButton("Review bug reports", Color.rgb(235, 250, 240), Color.rgb(20, 110, 65)).apply {
             setOnClickListener { showAdminBugInbox() }
         }, margins(bottom = 8))
-        panel.addView(actionButton("Manage admin accounts", Color.rgb(242, 238, 255), accent).apply {
-            setOnClickListener { showManageAdminsDialog() }
-        })
         contentLayout.addView(panel, 0, LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(dp(16), dp(8), dp(16), dp(12))
         })
@@ -928,53 +928,33 @@ Keep the answer short and useful. If the question asks for progress, explain the
         }.addOnFailureListener { error -> status.text = "Could not load reports: " + (error.message ?: "check admin claims and rules") }
     }
 
-    private fun isAdminAccount(): Boolean =
-        prefs.getBoolean("admin_verified_by_firebase", false) && firebaseAuth?.currentUser != null
+    // Local UI-only owner allowlist. This is NOT a secure server authorization boundary.
+    // Never use a shared/default password as an admin credential.
+    private fun isAdminAccount(): Boolean {
+        val signedInEmail = firebaseAuth?.currentUser?.email?.trim()
+        return signedInEmail.equals(LOCAL_ADMIN_EMAIL, ignoreCase = true)
+    }
 
     private fun refreshAdminClaim(user: FirebaseUser?) {
-        // Clear any cached role before checking the currently signed-in user's token.
-        prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
-        if (user == null) return
-        user.getIdToken(true).addOnSuccessListener { token ->
-            val admin = token.claims["admin"] == true
-            val claimedPlan = token.claims["plan"] as? String
-            val verifiedPlan = if (admin) "Admin" else if (claimedPlan == "Pro" || claimedPlan == "Max") claimedPlan else "Free"
-            prefs.edit().putBoolean("admin_verified_by_firebase", admin)
-                .putString("verified_plan", verifiedPlan).apply()
-            runOnUiThread {
-                updatePlanPill()
-                if (admin) showAdminBanner()
-                else contentLayout.findViewWithTag<View>("pocket_agent_admin_panel")?.let { contentLayout.removeView(it) }
-                if (::status.isInitialized && !prefs.getBoolean("voice_session_requested", false)) {
-                    status.text = "TAP THE ORB TO TALK"
+        val isLocalOwner = user?.email?.trim().equals(LOCAL_ADMIN_EMAIL, ignoreCase = true)
+        prefs.edit()
+            .putBoolean("local_admin_email_match", isLocalOwner)
+            .putString("verified_plan", if (isLocalOwner) "Admin" else "Free")
+            .apply()
+
+        runOnUiThread {
+            updatePlanPill()
+            if (isLocalOwner) {
+                showAdminBanner()
+            } else {
+                contentLayout.findViewWithTag<View>("pocket_agent_admin_panel")?.let {
+                    contentLayout.removeView(it)
                 }
             }
-        }.addOnFailureListener {
-            prefs.edit().putBoolean("admin_verified_by_firebase", false).putString("verified_plan", "Free").apply()
-            runOnUiThread { status.text = "ACCOUNT · ${user.email ?: "Signed-in user"} · ROLE NOT VERIFIED" }
+            if (::status.isInitialized && !prefs.getBoolean("voice_session_requested", false)) {
+                status.text = if (user == null) "NOT SIGNED IN" else "TAP THE ORB TO TALK"
+            }
         }
-    }
-
-    private fun activateInitialAdmin() {
-        showSparkAdminHelp("Activate initial admin")
-    }
-
-    private fun showManageAdminsDialog() {
-        showSparkAdminHelp("Manage admin accounts")
-    }
-
-    private fun showSparkAdminHelp(title: String) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(
-                "This Firebase project uses the Spark-compatible local admin tool. " +
-                "For security, the app cannot grant its own admin role. " +
-                "On your trusted device, follow docs/SPARK_ADMIN_SETUP.md in the JARVIS repository. " +
-                "Run the bootstrap command once for the verified owner. Later, use the grant or revoke command. " +
-                "Never put serviceAccountKey.json in GitHub or inside this APK."
-            )
-            .setPositiveButton("OK", null)
-            .show()
     }
 
     private fun showAccountBanner(user: FirebaseUser) {
