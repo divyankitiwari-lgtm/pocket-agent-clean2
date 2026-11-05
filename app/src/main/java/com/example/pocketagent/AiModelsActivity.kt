@@ -64,7 +64,7 @@ class AiModelsActivity : Activity() {
   card.addView(enabledSwitch,margins(10));root.addView(card,margins(14))
   val local=glassCard()
   local.addView(label("OPTIONAL LOCAL MODEL"))
-  localSwitch=Switch(this).apply{text="Try imported Gemma after API slots fail";setTextColor(ink);isChecked=getPreferences(MODE_PRIVATE).getBoolean("local_fallback",true)}
+  localSwitch=Switch(this).apply{text="Try imported Gemma after API slots fail";setTextColor(ink);isChecked=getSharedPreferences("jarvis_ai_settings",MODE_PRIVATE).getBoolean("local_model_fallback",true)}
   local.addView(localSwitch,margins(8))
   local.addView(text("Import a compatible MediaPipe .task model. Local inference is independent of API keys and may require substantial RAM and storage.",11,muted),margins(8))
   local.addView(button("Import local .task model"){chooseModelFile()},margins(8))
@@ -89,7 +89,7 @@ class AiModelsActivity : Activity() {
   modelSpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,spec.models)
   val selectedIndex=selected?.let{spec.models.indexOf(it)}?:-1
   if(selectedIndex>=0)modelSpinner.setSelection(selectedIndex)
-  if(baseUrlField.text.isNullOrBlank())baseUrlField.setText(spec.baseUrl)
+  if(baseUrlField.text.isNullOrBlank() || AiProviderCatalog.providers.any{it.baseUrl==baseUrlField.text.toString().trim()})baseUrlField.setText(spec.baseUrl)
   keyField.isEnabled=spec.requiresKey
   if(!spec.requiresKey)keyField.setText("")
  }
@@ -107,7 +107,7 @@ class AiModelsActivity : Activity() {
   try{store.save(currentSlot,slot);if(show)status.text="Slot $currentSlot saved securely."}catch(e:Exception){status.text=e.message?:"Secure save failed."}
  }
  private fun testChain(){
-  saveCurrent(false);getPreferences(MODE_PRIVATE).edit().putBoolean("local_fallback",localSwitch.isChecked).apply()
+  saveCurrent(false);getSharedPreferences("jarvis_ai_settings",MODE_PRIVATE).edit().putBoolean("local_model_fallback",localSwitch.isChecked).apply()
   status.text="Testing providers in fallback order…"
   Thread{try{
    val result=MultiProviderAiClient(applicationContext).generate("Reply with exactly: JARVIS connection test successful.",localSwitch.isChecked)
