@@ -65,6 +65,9 @@ class MainActivity : Activity() {
     private var welcomeDialog: AlertDialog? = null
     // Keep the on-device model loaded between agent steps; loading a ~500 MB model every step is too slow.
     private var gemmaEngine: GemmaEngine? = null
+    private var homeRoot: View? = null
+    private var authScreenVisible = false
+    private var authFeedback: TextView? = null
 
     private val ink = Color.rgb(31, 38, 58)
     private val muted = Color.rgb(111, 119, 139)
@@ -204,6 +207,7 @@ class MainActivity : Activity() {
         hidden.addView(answerView)
         contentLayout.addView(hidden)
 
+        homeRoot = root
         setContentView(root)
         updatePlanPill()
         voiceReceiver = object : android.content.BroadcastReceiver() {
@@ -925,171 +929,222 @@ Keep the answer short and useful. If the question asks for progress, explain the
             .show()
     }
     private fun showWelcomeGate() {
-        val panel = LinearLayout(this).apply {
+        authScreenVisible = true
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(4))
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(2, 4, 9), Color.rgb(7, 12, 23), Color.rgb(2, 4, 9))
+            )
         }
-        val name = field("Display name (new accounts)", false)
+        val glow = TextView(this).apply {
+            text = "J A R V I S"
+            textSize = 17f
+            letterSpacing = 0.28f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(220, 239, 255))
+        }
+        root.addView(glow, LinearLayout.LayoutParams(-1, dp(64)))
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(26), dp(22), dp(22))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.argb(205, 25, 34, 49), Color.argb(158, 9, 15, 27))
+            ).apply {
+                cornerRadius = dp(30).toFloat()
+                setStroke(dp(1), Color.argb(135, 166, 210, 235))
+            }
+            elevation = dp(16).toFloat()
+        }
+        val title = TextView(this).apply {
+            text = "Welcome back"
+            textSize = 29f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(246, 250, 255))
+        }
+        card.addView(title, margins(bottom = 7))
+        val subtitle = TextView(this).apply {
+            text = "Sign in to your JARVIS account"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(156, 174, 194))
+        }
+        card.addView(subtitle, margins(bottom = 24))
+
+        val displayName = field("Display name", false).apply {
+            setTextColor(Color.WHITE); setHintTextColor(Color.rgb(137, 157, 177))
+            background = glassSurface(18); visibility = View.GONE
+        }
         val email = field("Email address", false).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            setTextColor(Color.WHITE); setHintTextColor(Color.rgb(137, 157, 177))
+            background = glassSurface(22)
         }
-        val password = field("Password · at least 6 characters", true)
-        val googleSignInButton = actionButton("Continue with Google", Color.rgb(23, 35, 48), Color.rgb(235, 249, 250)).apply {
+        val password = field("Password · at least 6 characters", true).apply {
+            setTextColor(Color.WHITE); setHintTextColor(Color.rgb(137, 157, 177))
+            background = glassSurface(18)
+        }
+        card.addView(displayName, margins(bottom = 10))
+        card.addView(email, margins(bottom = 10))
+        card.addView(password, margins(bottom = 12))
+
+        val feedback = TextView(this).apply {
+            text = if (firebaseAuth == null) "Firebase is not configured. The app owner must add the Firebase Android configuration." else ""
+            textSize = 12f
+            setTextColor(Color.rgb(255, 147, 139))
+            gravity = Gravity.CENTER
+        }
+        authFeedback = feedback
+        card.addView(feedback, margins(bottom = 10))
+
+        var signingUp = false
+        val primary = actionButton("Continue  →", Color.rgb(30, 191, 190), Color.rgb(2, 18, 27)).apply {
+            textSize = 15f
+            minHeight = dp(54); minimumHeight = dp(54)
+        }
+        card.addView(primary, margins(bottom = 16))
+
+        val divider = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val lineColor = Color.argb(80, 190, 210, 228)
+        divider.addView(View(this).apply { setBackgroundColor(lineColor) }, LinearLayout.LayoutParams(0, dp(1), 1f))
+        divider.addView(TextView(this).apply {
+            text = "  OR  "; textSize = 10f; setTextColor(Color.rgb(139, 158, 180))
+        })
+        divider.addView(View(this).apply { setBackgroundColor(lineColor) }, LinearLayout.LayoutParams(0, dp(1), 1f))
+        card.addView(divider, margins(bottom = 15))
+
+        val google = actionButton("G   Continue with Google", Color.argb(105, 35, 49, 66), Color.rgb(230, 242, 251)).apply {
+            minHeight = dp(52); minimumHeight = dp(52)
             setOnClickListener {
                 if (firebaseAuth == null || firestore == null) {
-                    status.text = "Google sign-in needs the owner's Firebase configuration"
+                    feedback.text = "Firebase Authentication is not connected yet."
                 } else {
                     val clientIdResource = resources.getIdentifier("default_web_client_id", "string", packageName)
                     if (clientIdResource == 0) {
-                        status.text = "Add a Web OAuth client in Firebase Console, then rebuild with google-services.json"
-                    } else {
-                        try {
-                            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                                .requestIdToken(getString(clientIdResource))
-                                .requestEmail()
-                                .build()
-                            startActivityForResult(GoogleSignIn.getClient(this@MainActivity, options).signInIntent, 7413)
-                        } catch (error: Exception) {
-                            status.text = "Could not start Google sign-in: " + (error.message ?: "unknown error")
-                        }
+                        feedback.text = "Google OAuth client is missing from this Firebase configuration."
+                    } else try {
+                        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                            .requestIdToken(getString(clientIdResource)).requestEmail().build()
+                        startActivityForResult(GoogleSignIn.getClient(this@MainActivity, options).signInIntent, 7413)
+                    } catch (error: Exception) {
+                        feedback.text = "Google sign-in could not start: " + (error.message ?: "unknown error")
                     }
                 }
             }
         }
-        panel.addView(googleSignInButton, margins(bottom = 10))
-        val setupHelpButton = actionButton("Firebase setup help", Color.rgb(230, 244, 255), Color.rgb(25, 75, 125)).apply {
-            minHeight = dp(44)
-            minimumHeight = dp(44)
-            setOnClickListener {
-                AlertDialog.Builder(this@MainActivity).setTitle("Firebase setup")
-                    .setMessage("1. Register Android package com.example.pocketagent in Firebase. 2. Add the generated google-services.json privately. 3. Enable Email/Password and Google sign-in. 4. Configure the Google Web OAuth client and signing-certificate SHA-1. 5. Create Firestore and publish tested firestore.rules. Read FIREBASE_SECURITY_SETUP.md.")
-                    .setPositiveButton("OK", null).show()
-            }
-        }
-        panel.addView(setupHelpButton, margins(bottom = 10))
-        panel.addView(name, margins(bottom = 8))
-        panel.addView(email, margins(bottom = 8))
-        panel.addView(password, margins(bottom = 8))
-        val resetPasswordButton = actionButton("Forgot password?", Color.rgb(238, 235, 255), accent).apply {
-            minHeight = dp(44)
-            minimumHeight = dp(44)
-            setOnClickListener {
-                val emailValue = email.text.toString().trim()
-                if (firebaseAuth == null || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches()) {
-                    status.text = "Enter your account email first; Firebase must be configured"
-                } else {
-                    isEnabled = false
-                    firebaseAuth!!.sendPasswordResetEmail(emailValue)
-                        .addOnSuccessListener {
-                            status.text = "Password reset email sent if that account exists"
-                            isEnabled = true
-                        }
-                        .addOnFailureListener { error ->
-                            status.text = "Could not send reset email: " + (error.message ?: "check connection")
-                            isEnabled = true
-                        }
-                }
-            }
-        }
-        panel.addView(resetPasswordButton, margins(bottom = 8))
-        panel.addView(TextView(this).apply {
-            text = if (firebaseAuth == null) "Firebase is not configured. Add app/google-services.json, enable Email/Password in Firebase Console, and create Firestore. No demo password is accepted as a real login."
-                else "Firebase Authentication manages passwords. JARVIS does not save passwords in local preferences."
+        card.addView(google, margins(bottom = 14))
+
+        val forgot = TextView(this).apply {
+            text = "Forgot password?"
             textSize = 12f
-            setTextColor(muted)
-        })
-        listOf(name, email, password).forEach { input ->
-            input.setTextColor(Color.rgb(235, 245, 248))
-            input.setHintTextColor(Color.rgb(130, 154, 168))
-            input.background = glassSurface(16)
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(133, 213, 229))
+            setPadding(0, dp(8), 0, dp(12))
+            setOnClickListener {
+                val value = email.text.toString().trim()
+                if (firebaseAuth == null || !android.util.Patterns.EMAIL_ADDRESS.matcher(value).matches()) {
+                    feedback.text = "Enter your account email first."
+                } else {
+                    firebaseAuth!!.sendPasswordResetEmail(value)
+                        .addOnSuccessListener { feedback.text = "Reset email sent if the account exists." }
+                        .addOnFailureListener { error -> feedback.text = error.message ?: "Could not send reset email." }
+                }
+            }
         }
-        panel.background = glassSurface(26)
-        val dialog = AlertDialog.Builder(this).setTitle("WELCOME BACK")
-            .setMessage("Sign in with Google or your email and password, or create your account.")
-            .setView(panel)
-            .setCancelable(false).setPositiveButton("Create account", null)
-            .setNegativeButton("Sign in", null).create()
-        welcomeDialog = dialog
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(5, 9, 16)))
-            dialog.window?.setLayout(-1, -1)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(105, 228, 219))
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(220, 238, 243))
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val displayName = name.text.toString().trim()
-                val emailValue = email.text.toString().trim()
-                val passwordValue = password.text.toString()
-                if (firebaseAuth == null || firestore == null) {
-                    status.text = "Firebase setup required"
-                    AlertDialog.Builder(this).setTitle("Firebase not connected")
-                        .setMessage("Register package com.example.pocketagent in Firebase, enable Email/Password Authentication and Firestore, then add app/google-services.json. Read FIREBASE_SECURITY_SETUP.md.")
-                        .setPositiveButton("OK", null).show()
+        card.addView(forgot)
+
+        val switch = TextView(this).apply {
+            text = "Don't have an account?  Sign up"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(140, 224, 219))
+            setPadding(dp(8), dp(12), dp(8), dp(5))
+        }
+        card.addView(switch)
+        fun refreshMode() {
+            title.text = if (signingUp) "Create account" else "Welcome back"
+            subtitle.text = if (signingUp) "Create your secure JARVIS account" else "Sign in to your JARVIS account"
+            displayName.visibility = if (signingUp) View.VISIBLE else View.GONE
+            primary.text = if (signingUp) "Create account  →" else "Continue  →"
+            switch.text = if (signingUp) "Already have an account?  Sign in" else "Don't have an account?  Sign up"
+        }
+        switch.setOnClickListener { signingUp = !signingUp; feedback.text = ""; refreshMode() }
+        primary.setOnClickListener {
+            val emailValue = email.text.toString().trim()
+            val passwordValue = password.text.toString()
+            if (firebaseAuth == null || firestore == null) {
+                feedback.text = "Firebase setup is required before account sign-in."
+                return@setOnClickListener
+            }
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || passwordValue.length < 6) {
+                feedback.text = "Enter a valid email and a password with at least 6 characters."
+                return@setOnClickListener
+            }
+            primary.isEnabled = false
+            feedback.setTextColor(Color.rgb(143, 211, 235))
+            feedback.text = if (signingUp) "Creating your account…" else "Signing in…"
+            if (signingUp) {
+                val nameValue = displayName.text.toString().trim()
+                if (nameValue.isBlank()) {
+                    primary.isEnabled = true
+                    feedback.text = "Enter your display name."
                     return@setOnClickListener
                 }
-                if (displayName.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || passwordValue.length < 6) {
-                    status.text = "Enter a name, valid email and password with at least 6 characters"
-                    return@setOnClickListener
-                }
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
                 firebaseAuth!!.createUserWithEmailAndPassword(emailValue, passwordValue)
                     .addOnSuccessListener { result ->
                         val user = result.user
                         if (user == null) {
-                            dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                            status.text = "Account creation returned no user"
-                            return@addOnSuccessListener
+                            primary.isEnabled = true; feedback.text = "Account creation returned no user."; return@addOnSuccessListener
                         }
                         val profile = hashMapOf<String, Any>(
-                            "displayName" to displayName, "email" to emailValue,
+                            "displayName" to nameValue, "email" to emailValue,
                             "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
                             "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
                         )
-                        dialog.dismiss()
+                        user.updateProfile(com.google.firebase.auth.UserProfileChangeRequest.Builder().setDisplayName(nameValue).build())
+                        user.sendEmailVerification()
+                        firestore!!.collection("users").document(user.uid).set(profile)
+                            .addOnFailureListener { error -> runOnUiThread { status.text = "Profile sync failed: " + (error.message ?: "Firestore error") } }
+                        authScreenVisible = false
+                        authFeedback = null
+                        setContentView(homeRoot)
                         refreshAdminClaim(user)
                         showAccountBanner(user)
-                        status.text = "Account created · sending verification email"
-                        user.updateProfile(com.google.firebase.auth.UserProfileChangeRequest.Builder().setDisplayName(displayName).build())
-                        user.sendEmailVerification().addOnSuccessListener {
-                            status.text = "Account created · verification email sent to " + emailValue
-                        }.addOnFailureListener { error ->
-                            status.text = "Account created, but verification email could not be sent: " + (error.message ?: "unknown error")
-                        }
-                        firestore!!.collection("users").document(user.uid).set(profile)
-                            .addOnFailureListener { error ->
-                                status.text = "Account created, but profile sync failed: " + (error.message ?: "check Firestore rules")
-                            }
-                    }.addOnFailureListener { error ->
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                        status.text = "Sign-up failed: " + (error.message ?: "check connection and settings")
+                        status.text = "Account created · verification email sent to " + emailValue
                     }
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
-                val emailValue = email.text.toString().trim()
-                val passwordValue = password.text.toString()
-                if (firebaseAuth == null || emailValue.isBlank() || passwordValue.isBlank()) {
-                    status.text = "Firebase setup, email and password are required"
-                    return@setOnClickListener
-                }
-                dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = false
+                    .addOnFailureListener { error ->
+                        primary.isEnabled = true
+                        feedback.setTextColor(Color.rgb(255, 147, 139))
+                        feedback.text = "Sign-up failed: " + (error.message ?: "check connection")
+                    }
+            } else {
                 firebaseAuth!!.signInWithEmailAndPassword(emailValue, passwordValue)
                     .addOnSuccessListener { result ->
                         val user = result.user
                         if (user == null) {
-                            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = true
-                            status.text = "Sign-in returned no user"
-                            return@addOnSuccessListener
+                            primary.isEnabled = true; feedback.text = "Sign-in returned no user."; return@addOnSuccessListener
                         }
-                        dialog.dismiss()
+                        authScreenVisible = false
+                        authFeedback = null
+                        setContentView(homeRoot)
                         refreshAdminClaim(user)
                         showAccountBanner(user)
                         status.text = "Signed in successfully"
-                    }.addOnFailureListener { error ->
-                        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = true
-                        status.text = "Sign-in failed: " + (error.message ?: "check email and password")
+                    }
+                    .addOnFailureListener { error ->
+                        primary.isEnabled = true
+                        feedback.setTextColor(Color.rgb(255, 147, 139))
+                        feedback.text = "Sign-in failed: " + (error.message ?: "check email and password")
                     }
             }
         }
-        dialog.show()
+        root.addView(card, LinearLayout.LayoutParams(-1, -2))
+        setContentView(root)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
