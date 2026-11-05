@@ -28,6 +28,7 @@ class AiModelsActivity : Activity() {
  private lateinit var slotSpinner:Spinner
  private lateinit var providerSpinner:Spinner
  private lateinit var modelSpinner:Spinner
+ private lateinit var modelIdField:EditText
  private lateinit var keyField:EditText
  private lateinit var baseUrlField:EditText
  private lateinit var enabledSwitch:Switch
@@ -56,6 +57,8 @@ class AiModelsActivity : Activity() {
   providerSpinner=spinner(AiProviderCatalog.providers.map{it.label});card.addView(providerSpinner,margins(12))
   card.addView(label("MODEL"))
   modelSpinner=spinner(AiProviderCatalog.providers.first().models);card.addView(modelSpinner,margins(12))
+  card.addView(label("CUSTOM MODEL ID (OPTIONAL)"))
+  modelIdField=edit("Enter an exact provider model ID to override the list",false);card.addView(modelIdField,margins(12))
   card.addView(label("API KEY"))
   keyField=edit("Paste the key for this provider",true);card.addView(keyField,margins(12))
   card.addView(label("CUSTOM BASE URL (OPTIONAL)"))
@@ -98,11 +101,13 @@ class AiModelsActivity : Activity() {
   val pi=AiProviderCatalog.providers.indexOfFirst{it.id==slot.providerId}.coerceAtLeast(0)
   providerSpinner.setSelection(pi);updateModels(pi,slot.model)
   keyField.setText(slot.apiKey);baseUrlField.setText(slot.baseUrl.ifBlank{AiProviderCatalog.providers[pi].baseUrl})
+  modelIdField.setText(if(AiProviderCatalog.providers[pi].models.contains(slot.model)) "" else slot.model)
   enabledSwitch.isChecked=slot.enabled;status.text="Editing slot $currentSlot"
  }
  private fun saveCurrent(show:Boolean=true){
   val spec=AiProviderCatalog.providers[providerSpinner.selectedItemPosition.coerceIn(0,AiProviderCatalog.providers.lastIndex)]
-  val slot=AiSlot(enabledSwitch.isChecked,spec.id,modelSpinner.selectedItem?.toString()?:spec.models.first(),keyField.text.toString().trim(),baseUrlField.text.toString().trim())
+  val chosenModel=modelIdField.text.toString().trim().ifBlank{modelSpinner.selectedItem?.toString()?:spec.models.first()}
+  val slot=AiSlot(enabledSwitch.isChecked,spec.id,chosenModel,keyField.text.toString().trim(),baseUrlField.text.toString().trim())
   if(slot.enabled&&spec.requiresKey&&slot.apiKey.isBlank()){status.text="Add an API key before enabling this slot.";return}
   try{store.save(currentSlot,slot);if(show)status.text="Slot $currentSlot saved securely."}catch(e:Exception){status.text=e.message?:"Secure save failed."}
  }
