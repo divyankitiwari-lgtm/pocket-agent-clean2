@@ -1280,14 +1280,16 @@ Keep the answer short and useful. If the question asks for progress, explain the
     }
 
     private fun actionButton(title: String, bg: Int, fg: Int) = Button(this).apply {
-        val isPrimary = bg == accent || bg == Color.rgb(30, 32, 48)
+        val isPrimary = bg == accent || bg == Color.rgb(30, 32, 48) ||
+            (Color.red(fg) + Color.green(fg) + Color.blue(fg) < 380 && Color.green(bg) > 120)
         val normalBackground = GradientDrawable(
             GradientDrawable.Orientation.LEFT_RIGHT,
-            if (isPrimary) intArrayOf(Color.rgb(126, 109, 239), Color.rgb(91, 76, 207))
+            if (isPrimary) intArrayOf(bg, blendWithWhite(bg))
             else intArrayOf(Color.WHITE, blendWithWhite(bg))
         ).apply {
             cornerRadius = dp(18).toFloat()
-            setStroke(dp(1), if (isPrimary) Color.rgb(112, 96, 222) else Color.rgb(225, 229, 243))
+            setStroke(dp(1), if (isPrimary) Color.argb(150, Color.red(bg), Color.green(bg), Color.blue(bg))
+                else Color.rgb(225, 229, 243))
         }
         text = title
         textSize = 13f
@@ -1295,9 +1297,8 @@ Keep the answer short and useful. If the question asks for progress, explain the
         gravity = Gravity.CENTER
         textAlignment = View.TEXT_ALIGNMENT_CENTER
         setTypeface(null, Typeface.BOLD)
-        setTextColor(if (isPrimary) Color.WHITE else fg)
+        setTextColor(fg)
         background = normalBackground
-        // Keep the touch target unchanged; show a subtle pressed state instead of moving bounds.
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> view.alpha = 0.78f
